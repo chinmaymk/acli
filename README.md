@@ -66,19 +66,11 @@ acli config setup work
 
 ### Getting Your Credentials
 
-**Jira & Confluence** use email + API token (Basic Auth):
+All Atlassian products (Jira, Confluence, and Bitbucket) use email + API token (Basic Auth):
 
 1. Go to [Atlassian API Tokens](https://id.atlassian.com/manage-profile/security/api-tokens)
 2. Click **Create API token**, give it a label, and copy the token
 3. Your Atlassian URL looks like `https://your-instance.atlassian.net`
-
-**Bitbucket** uses app passwords or access tokens:
-
-1. Go to [Bitbucket App Passwords](https://bitbucket.org/account/settings/app-passwords/)
-2. Click **Create app password**, select the permissions you need, and copy the password
-3. You'll also need your Bitbucket username (shown at the top of your account settings)
-
-Alternatively, Bitbucket can use workspace/repository access tokens (Bearer auth) — in that case, leave the username blank.
 
 ### Profile Management
 
@@ -115,14 +107,9 @@ Profiles are stored in `~/.config/acli/config.json` (created automatically by `c
 }
 ```
 
-### Auth Modes
+### Auth Mode
 
-ACLI supports two authentication modes, detected automatically. The same credentials are used for Jira, Confluence, and Bitbucket:
-
-| Mode | When | How |
-|---|---|---|
-| **Basic Auth** | Email is set in profile | `email:api_token` (personal API tokens) |
-| **Bearer Auth** | Email is blank | `Authorization: Bearer <token>` (OAuth 2.0 / scoped tokens) |
+ACLI authenticates using Basic Auth (`email:api_token`) with personal API tokens. The same credentials are used for Jira, Confluence, and Bitbucket.
 
 ## Usage
 
