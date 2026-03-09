@@ -11,6 +11,31 @@ A command-line interface for managing Atlassian Cloud products — Jira, Conflue
 
 ## Installation
 
+### Quick install (Linux / macOS)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/chinmaymk/acli/main/install.sh | sh
+```
+
+To install a specific version or to a custom directory:
+
+```bash
+ACLI_VERSION=v1.0.0 ACLI_INSTALL_DIR=~/.local/bin curl -fsSL https://raw.githubusercontent.com/chinmaymk/acli/main/install.sh | sh
+```
+
+### Windows (PowerShell)
+
+```powershell
+# Download the latest release for Windows
+Invoke-WebRequest -Uri "https://github.com/chinmaymk/acli/releases/latest/download/acli-windows-amd64.exe" -OutFile "$env:LOCALAPPDATA\acli.exe"
+
+# Add to PATH (current user, persists across sessions)
+$path = [Environment]::GetEnvironmentVariable("Path", "User")
+if ($path -notlike "*$env:LOCALAPPDATA*") {
+    [Environment]::SetEnvironmentVariable("Path", "$path;$env:LOCALAPPDATA", "User")
+}
+```
+
 ### From source
 
 ```bash
