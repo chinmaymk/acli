@@ -59,7 +59,9 @@ func (c *Client) ListPipelines(workspace, repoSlug string, opts *ListPipelinesOp
 			params.Set("sort", opts.Sort)
 		}
 	}
-	params.Set("sort", "-created_on")
+	if params.Get("sort") == "" {
+		params.Set("sort", "-created_on")
+	}
 	params.Set("pagelen", "20")
 
 	path := fmt.Sprintf("/repositories/%s/%s/pipelines",
@@ -219,7 +221,7 @@ func (c *Client) GetStepLog(workspace, repoSlug, pipelineUUID, stepUUID string) 
 	path := fmt.Sprintf("/repositories/%s/%s/pipelines/%s/steps/%s/log",
 		url.PathEscape(workspace), url.PathEscape(repoSlug),
 		url.PathEscape(pipelineUUID), url.PathEscape(stepUUID))
-	data, err := c.get(path)
+	data, err := c.getRaw(path)
 	if err != nil {
 		return "", err
 	}

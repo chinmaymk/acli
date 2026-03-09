@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/chinmaymk/acli/internal/config"
@@ -160,6 +161,15 @@ func (c *Client) Delete(path string, query url.Values) error {
 	return c.do(req, nil)
 }
 
+// DeleteWithBody performs a DELETE request with a JSON body.
+func (c *Client) DeleteWithBody(path string, body interface{}, v interface{}) error {
+	req, err := c.newRequest("DELETE", path, body)
+	if err != nil {
+		return err
+	}
+	return c.do(req, v)
+}
+
 // Patch performs a PATCH request.
 func (c *Client) Patch(path string, body interface{}, v interface{}) error {
 	req, err := c.newRequest("PATCH", path, body)
@@ -179,7 +189,7 @@ func (c *Client) UploadFile(path string, fieldName string, filePath string, v in
 
 	var buf bytes.Buffer
 	writer := multipart.NewWriter(&buf)
-	part, err := writer.CreateFormFile(fieldName, filePath)
+	part, err := writer.CreateFormFile(fieldName, filepath.Base(filePath))
 	if err != nil {
 		return fmt.Errorf("creating form file: %w", err)
 	}

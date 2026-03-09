@@ -12,7 +12,7 @@ type Webhook struct {
 	URL         string   `json:"url"`
 	Description string   `json:"description"`
 	Active      bool     `json:"active"`
-	CreatedAt   string   `json:"created_at"`
+	CreatedAt   string   `json:"created_on"`
 	Events      []string `json:"events"`
 	Subject     struct {
 		Type     string `json:"type"`

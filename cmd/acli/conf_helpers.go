@@ -4,9 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
-	"os"
-	"strings"
-	"text/tabwriter"
 
 	"github.com/chinmaymk/acli/internal/api"
 	"github.com/chinmaymk/acli/internal/config"
@@ -23,6 +20,13 @@ func newConfluenceClient(cmd *cobra.Command) (*api.Client, error) {
 	profile, err := cfg.GetProfile(profileName)
 	if err != nil {
 		return nil, err
+	}
+
+	if profile.AtlassianURL == "" {
+		return nil, fmt.Errorf("no Atlassian URL configured: run 'acli config setup' to set one")
+	}
+	if profile.APIToken == "" {
+		return nil, fmt.Errorf("no API token configured: run 'acli config setup' to set one")
 	}
 
 	return api.NewClient(profile.AtlassianURL, profile.Email, profile.APIToken), nil
@@ -72,16 +76,6 @@ func printJSONBytes(data []byte) {
 		return
 	}
 	fmt.Println(string(pretty))
-}
-
-func printTable(headers []string, rows [][]string) {
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, strings.Join(headers, "\t"))
-	fmt.Fprintln(w, strings.Repeat("-\t", len(headers)))
-	for _, row := range rows {
-		fmt.Fprintln(w, strings.Join(row, "\t"))
-	}
-	w.Flush()
 }
 
 func addPaginationFlags(cmd *cobra.Command) {

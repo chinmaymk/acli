@@ -28,7 +28,7 @@ func NewClient(baseURL, email, apiToken string) *Client {
 
 func (c *Client) ConfluenceV2(method, path string, query url.Values, body interface{}) ([]byte, error) {
 	endpoint := c.BaseURL + "/wiki/api/v2" + path
-	if query != nil && len(query) > 0 {
+	if len(query) > 0 {
 		endpoint += "?" + query.Encode()
 	}
 
@@ -46,7 +46,11 @@ func (c *Client) ConfluenceV2(method, path string, query url.Values, body interf
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
 
-	req.SetBasicAuth(c.Email, c.APIToken)
+	if c.Email != "" {
+		req.SetBasicAuth(c.Email, c.APIToken)
+	} else {
+		req.Header.Set("Authorization", "Bearer "+c.APIToken)
+	}
 	req.Header.Set("Accept", "application/json")
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")

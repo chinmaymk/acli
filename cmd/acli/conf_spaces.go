@@ -190,10 +190,11 @@ func init() {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			q := getPaginationQuery(cmd)
+			q.Set("space-id", args[0])
 			if t := getStringFlag(cmd, "title"); t != "" {
 				q.Set("title", t)
 			}
-			data, err := confGet(cmd, "/spaces/"+args[0]+"/blogposts", q)
+			data, err := confGet(cmd, "/blogposts", q)
 			if err != nil {
 				return err
 			}

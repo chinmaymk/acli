@@ -106,7 +106,7 @@ func (c *Client) ListCommitStatuses(workspace, repoSlug, commitHash string) ([]C
 func (c *Client) GetDiff(workspace, repoSlug, spec string) (string, error) {
 	path := fmt.Sprintf("/repositories/%s/%s/diff/%s",
 		url.PathEscape(workspace), url.PathEscape(repoSlug), url.PathEscape(spec))
-	data, err := c.get(path)
+	data, err := c.getRaw(path)
 	if err != nil {
 		return "", err
 	}
