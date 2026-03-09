@@ -325,6 +325,18 @@ func init() {
 			if limit := getIntFlag(cmd, "limit"); limit > 0 {
 				q.Set("limit", fmt.Sprintf("%d", limit))
 			}
+			if r := getStringFlag(cmd, "role-id"); r != "" {
+				q.Set("role-id", r)
+			}
+			if rt := getStringFlag(cmd, "role-type"); rt != "" {
+				q.Set("role-type", rt)
+			}
+			if p := getStringFlag(cmd, "principal-id"); p != "" {
+				q.Set("principal-id", p)
+			}
+			if pt := getStringFlag(cmd, "principal-type"); pt != "" {
+				q.Set("principal-type", pt)
+			}
 			data, err := confGet(cmd, "/spaces/"+args[0]+"/role-assignments", q)
 			if err != nil {
 				return err
@@ -334,6 +346,10 @@ func init() {
 		},
 	}
 	addPaginationFlags(spaceRoleAssignCmd)
+	spaceRoleAssignCmd.Flags().String("role-id", "", "Filter by role ID")
+	spaceRoleAssignCmd.Flags().String("role-type", "", "Filter by role type")
+	spaceRoleAssignCmd.Flags().String("principal-id", "", "Filter by principal ID")
+	spaceRoleAssignCmd.Flags().String("principal-type", "", "Filter by principal type")
 	confSpaceCmd.AddCommand(spaceRoleAssignCmd)
 
 	// space set-role-assignments

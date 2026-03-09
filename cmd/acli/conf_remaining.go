@@ -193,6 +193,19 @@ func init() {
 			if limit := getIntFlag(cmd, "limit"); limit > 0 {
 				q.Set("limit", fmt.Sprintf("%d", limit))
 			}
+			if sort := getStringFlag(cmd, "sort"); sort != "" {
+				q.Set("sort", sort)
+			}
+			if ids := getStringSliceFlag(cmd, "ids"); len(ids) > 0 {
+				for _, id := range ids {
+					q.Add("ids", id)
+				}
+			}
+			if keys := getStringSliceFlag(cmd, "keys"); len(keys) > 0 {
+				for _, k := range keys {
+					q.Add("keys", k)
+				}
+			}
 			data, err := confGet(cmd, "/data-policies/spaces", q)
 			if err != nil {
 				return err
@@ -202,6 +215,9 @@ func init() {
 		},
 	}
 	addPaginationFlags(dpSpacesCmd)
+	addSortFlag(dpSpacesCmd)
+	dpSpacesCmd.Flags().StringSlice("ids", nil, "Filter by space IDs")
+	dpSpacesCmd.Flags().StringSlice("keys", nil, "Filter by space keys")
 	confDataPolicyCmd.AddCommand(dpSpacesCmd)
 
 	// === Space Permissions ===
@@ -225,7 +241,26 @@ func init() {
 		Short:   "Get available space roles",
 		Aliases: []string{"ls"},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			data, err := confGet(cmd, "/space-roles", nil)
+			q := url.Values{}
+			if s := getStringFlag(cmd, "space-id"); s != "" {
+				q.Set("space-id", s)
+			}
+			if r := getStringFlag(cmd, "role-type"); r != "" {
+				q.Set("role-type", r)
+			}
+			if p := getStringFlag(cmd, "principal-id"); p != "" {
+				q.Set("principal-id", p)
+			}
+			if pt := getStringFlag(cmd, "principal-type"); pt != "" {
+				q.Set("principal-type", pt)
+			}
+			if cursor := getStringFlag(cmd, "cursor"); cursor != "" {
+				q.Set("cursor", cursor)
+			}
+			if limit := getIntFlag(cmd, "limit"); limit > 0 {
+				q.Set("limit", fmt.Sprintf("%d", limit))
+			}
+			data, err := confGet(cmd, "/space-roles", q)
 			if err != nil {
 				return err
 			}
@@ -233,6 +268,11 @@ func init() {
 			return nil
 		},
 	}
+	addPaginationFlags(listSpaceRolesCmd)
+	listSpaceRolesCmd.Flags().String("space-id", "", "Filter by space ID")
+	listSpaceRolesCmd.Flags().String("role-type", "", "Filter by role type")
+	listSpaceRolesCmd.Flags().String("principal-id", "", "Filter by principal ID")
+	listSpaceRolesCmd.Flags().String("principal-type", "", "Filter by principal type")
 	confSpaceRoleCmd.AddCommand(listSpaceRolesCmd)
 
 	getSpaceRoleCmd := &cobra.Command{

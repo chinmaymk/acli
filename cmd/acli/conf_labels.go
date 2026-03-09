@@ -43,6 +43,11 @@ func init() {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			q := getPaginationQuery(cmd)
+			if spaceIDs := getStringSliceFlag(cmd, "space-id"); len(spaceIDs) > 0 {
+				for _, id := range spaceIDs {
+					q.Add("space-id", id)
+				}
+			}
 			data, err := confGet(cmd, "/labels/"+args[0]+"/pages", q)
 			if err != nil {
 				return err
@@ -54,6 +59,7 @@ func init() {
 	addPaginationFlags(labelPagesCmd)
 	addSortFlag(labelPagesCmd)
 	addBodyFormatFlag(labelPagesCmd)
+	labelPagesCmd.Flags().StringSlice("space-id", nil, "Filter by space IDs")
 	confLabelCmd.AddCommand(labelPagesCmd)
 
 	// label blogposts
@@ -63,6 +69,11 @@ func init() {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			q := getPaginationQuery(cmd)
+			if spaceIDs := getStringSliceFlag(cmd, "space-id"); len(spaceIDs) > 0 {
+				for _, id := range spaceIDs {
+					q.Add("space-id", id)
+				}
+			}
 			data, err := confGet(cmd, "/labels/"+args[0]+"/blogposts", q)
 			if err != nil {
 				return err
@@ -74,6 +85,7 @@ func init() {
 	addPaginationFlags(labelBlogPostsCmd)
 	addSortFlag(labelBlogPostsCmd)
 	addBodyFormatFlag(labelBlogPostsCmd)
+	labelBlogPostsCmd.Flags().StringSlice("space-id", nil, "Filter by space IDs")
 	confLabelCmd.AddCommand(labelBlogPostsCmd)
 
 	// label attachments

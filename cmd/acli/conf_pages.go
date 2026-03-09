@@ -67,7 +67,7 @@ func init() {
 			}
 			for _, flag := range []string{"include-labels", "include-properties", "include-operations",
 				"include-likes", "include-versions", "include-version",
-				"include-favorited-by-current-user-status", "include-collaborators", "include-direct-children"} {
+				"include-favorited-by-current-user-status", "include-webresources", "include-collaborators", "include-direct-children"} {
 				if getBoolFlag(cmd, flag) {
 					q.Set(flag, "true")
 				}
@@ -91,6 +91,7 @@ func init() {
 	getPageCmd.Flags().Bool("include-versions", false, "Include versions")
 	getPageCmd.Flags().Bool("include-version", false, "Include current version")
 	getPageCmd.Flags().Bool("include-favorited-by-current-user-status", false, "Include favorited status")
+	getPageCmd.Flags().Bool("include-webresources", false, "Include web resources")
 	getPageCmd.Flags().Bool("include-collaborators", false, "Include collaborators")
 	getPageCmd.Flags().Bool("include-direct-children", false, "Include direct children")
 	confPageCmd.AddCommand(getPageCmd)

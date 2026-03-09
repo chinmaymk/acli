@@ -176,31 +176,75 @@ func init() {
 	addPaginationFlags(footerChildrenCmd)
 	confFooterCommentCmd.AddCommand(footerChildrenCmd)
 
-	// footer sub-resources
-	for _, sub := range []struct {
-		use, short, path string
-	}{
-		{"operations [comment-id]", "Get permitted operations", "/operations"},
-		{"versions [comment-id]", "Get footer comment versions", "/versions"},
-		{"likes-count [comment-id]", "Get like count", "/likes/count"},
-		{"likes-users [comment-id]", "Get like users", "/likes/users"},
-	} {
-		sub := sub
-		subCmd := &cobra.Command{
-			Use:   sub.use,
-			Short: sub.short,
-			Args:  cobra.ExactArgs(1),
-			RunE: func(cmd *cobra.Command, args []string) error {
-				data, err := confGet(cmd, "/footer-comments/"+args[0]+sub.path, nil)
-				if err != nil {
-					return err
-				}
-				printJSON(data)
-				return nil
-			},
-		}
-		confFooterCommentCmd.AddCommand(subCmd)
+	// footer operations
+	footerOpsCmd := &cobra.Command{
+		Use:   "operations [comment-id]",
+		Short: "Get permitted operations",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			data, err := confGet(cmd, "/footer-comments/"+args[0]+"/operations", nil)
+			if err != nil {
+				return err
+			}
+			printJSON(data)
+			return nil
+		},
 	}
+	confFooterCommentCmd.AddCommand(footerOpsCmd)
+
+	// footer versions
+	footerVersionsCmd := &cobra.Command{
+		Use:   "versions [comment-id]",
+		Short: "Get footer comment versions",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			q := getPaginationQuery(cmd)
+			data, err := confGet(cmd, "/footer-comments/"+args[0]+"/versions", q)
+			if err != nil {
+				return err
+			}
+			printJSON(data)
+			return nil
+		},
+	}
+	addPaginationFlags(footerVersionsCmd)
+	addSortFlag(footerVersionsCmd)
+	addBodyFormatFlag(footerVersionsCmd)
+	confFooterCommentCmd.AddCommand(footerVersionsCmd)
+
+	// footer likes-count
+	footerLikesCountCmd := &cobra.Command{
+		Use:   "likes-count [comment-id]",
+		Short: "Get like count",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			data, err := confGet(cmd, "/footer-comments/"+args[0]+"/likes/count", nil)
+			if err != nil {
+				return err
+			}
+			printJSON(data)
+			return nil
+		},
+	}
+	confFooterCommentCmd.AddCommand(footerLikesCountCmd)
+
+	// footer likes-users
+	footerLikesUsersCmd := &cobra.Command{
+		Use:   "likes-users [comment-id]",
+		Short: "Get like users",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			q := getPaginationQuery(cmd)
+			data, err := confGet(cmd, "/footer-comments/"+args[0]+"/likes/users", q)
+			if err != nil {
+				return err
+			}
+			printJSON(data)
+			return nil
+		},
+	}
+	addPaginationFlags(footerLikesUsersCmd)
+	confFooterCommentCmd.AddCommand(footerLikesUsersCmd)
 
 	// footer version-details
 	footerVersionDetailCmd := &cobra.Command{
@@ -390,31 +434,75 @@ func init() {
 	addPaginationFlags(inlineChildrenCmd)
 	confInlineCommentCmd.AddCommand(inlineChildrenCmd)
 
-	// inline sub-resources
-	for _, sub := range []struct {
-		use, short, path string
-	}{
-		{"operations [comment-id]", "Get permitted operations", "/operations"},
-		{"versions [comment-id]", "Get inline comment versions", "/versions"},
-		{"likes-count [comment-id]", "Get like count", "/likes/count"},
-		{"likes-users [comment-id]", "Get like users", "/likes/users"},
-	} {
-		sub := sub
-		subCmd := &cobra.Command{
-			Use:   sub.use,
-			Short: sub.short,
-			Args:  cobra.ExactArgs(1),
-			RunE: func(cmd *cobra.Command, args []string) error {
-				data, err := confGet(cmd, "/inline-comments/"+args[0]+sub.path, nil)
-				if err != nil {
-					return err
-				}
-				printJSON(data)
-				return nil
-			},
-		}
-		confInlineCommentCmd.AddCommand(subCmd)
+	// inline operations
+	inlineOpsCmd := &cobra.Command{
+		Use:   "operations [comment-id]",
+		Short: "Get permitted operations",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			data, err := confGet(cmd, "/inline-comments/"+args[0]+"/operations", nil)
+			if err != nil {
+				return err
+			}
+			printJSON(data)
+			return nil
+		},
 	}
+	confInlineCommentCmd.AddCommand(inlineOpsCmd)
+
+	// inline versions
+	inlineVersionsCmd := &cobra.Command{
+		Use:   "versions [comment-id]",
+		Short: "Get inline comment versions",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			q := getPaginationQuery(cmd)
+			data, err := confGet(cmd, "/inline-comments/"+args[0]+"/versions", q)
+			if err != nil {
+				return err
+			}
+			printJSON(data)
+			return nil
+		},
+	}
+	addPaginationFlags(inlineVersionsCmd)
+	addSortFlag(inlineVersionsCmd)
+	addBodyFormatFlag(inlineVersionsCmd)
+	confInlineCommentCmd.AddCommand(inlineVersionsCmd)
+
+	// inline likes-count
+	inlineLikesCountCmd := &cobra.Command{
+		Use:   "likes-count [comment-id]",
+		Short: "Get like count",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			data, err := confGet(cmd, "/inline-comments/"+args[0]+"/likes/count", nil)
+			if err != nil {
+				return err
+			}
+			printJSON(data)
+			return nil
+		},
+	}
+	confInlineCommentCmd.AddCommand(inlineLikesCountCmd)
+
+	// inline likes-users
+	inlineLikesUsersCmd := &cobra.Command{
+		Use:   "likes-users [comment-id]",
+		Short: "Get like users",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			q := getPaginationQuery(cmd)
+			data, err := confGet(cmd, "/inline-comments/"+args[0]+"/likes/users", q)
+			if err != nil {
+				return err
+			}
+			printJSON(data)
+			return nil
+		},
+	}
+	addPaginationFlags(inlineLikesUsersCmd)
+	confInlineCommentCmd.AddCommand(inlineLikesUsersCmd)
 
 	// inline version-details
 	inlineVersionDetailCmd := &cobra.Command{

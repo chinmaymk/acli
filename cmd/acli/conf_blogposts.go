@@ -63,7 +63,7 @@ func init() {
 			}
 			for _, flag := range []string{"include-labels", "include-properties", "include-operations",
 				"include-likes", "include-versions", "include-version",
-				"include-favorited-by-current-user-status", "include-collaborators"} {
+				"include-favorited-by-current-user-status", "include-webresources", "include-collaborators"} {
 				if getBoolFlag(cmd, flag) {
 					q.Set(flag, "true")
 				}
@@ -87,6 +87,7 @@ func init() {
 	getBlogPostCmd.Flags().Bool("include-versions", false, "Include versions")
 	getBlogPostCmd.Flags().Bool("include-version", false, "Include current version")
 	getBlogPostCmd.Flags().Bool("include-favorited-by-current-user-status", false, "Include favorited status")
+	getBlogPostCmd.Flags().Bool("include-webresources", false, "Include web resources")
 	getBlogPostCmd.Flags().Bool("include-collaborators", false, "Include collaborators")
 	confBlogPostCmd.AddCommand(getBlogPostCmd)
 
@@ -199,37 +200,164 @@ func init() {
 	deleteBlogPostCmd.Flags().Bool("draft", false, "Delete a draft blog post")
 	confBlogPostCmd.AddCommand(deleteBlogPostCmd)
 
-	// blogpost sub-resources
-	for _, sub := range []struct {
-		use, short, path string
-	}{
-		{"attachments [blogpost-id]", "Get attachments for blog post", "/attachments"},
-		{"labels [blogpost-id]", "Get labels for blog post", "/labels"},
-		{"footer-comments [blogpost-id]", "Get footer comments for blog post", "/footer-comments"},
-		{"inline-comments [blogpost-id]", "Get inline comments for blog post", "/inline-comments"},
-		{"custom-content [blogpost-id]", "Get custom content in blog post", "/custom-content"},
-		{"operations [blogpost-id]", "Get permitted operations for blog post", "/operations"},
-		{"versions [blogpost-id]", "Get blog post versions", "/versions"},
-	} {
-		sub := sub
-		subCmd := &cobra.Command{
-			Use:   sub.use,
-			Short: sub.short,
-			Args:  cobra.ExactArgs(1),
-			RunE: func(cmd *cobra.Command, args []string) error {
-				q := getPaginationQuery(cmd)
-				data, err := confGet(cmd, "/blogposts/"+args[0]+sub.path, q)
-				if err != nil {
-					return err
-				}
-				printJSON(data)
-				return nil
-			},
-		}
-		addPaginationFlags(subCmd)
-		addSortFlag(subCmd)
-		confBlogPostCmd.AddCommand(subCmd)
+	// blogpost attachments
+	bpAttachmentsCmd := &cobra.Command{
+		Use:   "attachments [blogpost-id]",
+		Short: "Get attachments for blog post",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			q := getPaginationQuery(cmd)
+			if m := getStringFlag(cmd, "media-type"); m != "" {
+				q.Set("mediaType", m)
+			}
+			if f := getStringFlag(cmd, "filename"); f != "" {
+				q.Set("filename", f)
+			}
+			data, err := confGet(cmd, "/blogposts/"+args[0]+"/attachments", q)
+			if err != nil {
+				return err
+			}
+			printJSON(data)
+			return nil
+		},
 	}
+	addPaginationFlags(bpAttachmentsCmd)
+	addSortFlag(bpAttachmentsCmd)
+	addStatusFlag(bpAttachmentsCmd)
+	bpAttachmentsCmd.Flags().String("media-type", "", "Filter by media type")
+	bpAttachmentsCmd.Flags().String("filename", "", "Filter by filename")
+	confBlogPostCmd.AddCommand(bpAttachmentsCmd)
+
+	// blogpost labels
+	bpLabelsCmd := &cobra.Command{
+		Use:   "labels [blogpost-id]",
+		Short: "Get labels for blog post",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			q := getPaginationQuery(cmd)
+			if p := getStringFlag(cmd, "prefix"); p != "" {
+				q.Set("prefix", p)
+			}
+			data, err := confGet(cmd, "/blogposts/"+args[0]+"/labels", q)
+			if err != nil {
+				return err
+			}
+			printJSON(data)
+			return nil
+		},
+	}
+	addPaginationFlags(bpLabelsCmd)
+	addSortFlag(bpLabelsCmd)
+	bpLabelsCmd.Flags().String("prefix", "", "Filter by prefix")
+	confBlogPostCmd.AddCommand(bpLabelsCmd)
+
+	// blogpost footer-comments
+	bpFooterCommentsCmd := &cobra.Command{
+		Use:   "footer-comments [blogpost-id]",
+		Short: "Get footer comments for blog post",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			q := getPaginationQuery(cmd)
+			data, err := confGet(cmd, "/blogposts/"+args[0]+"/footer-comments", q)
+			if err != nil {
+				return err
+			}
+			printJSON(data)
+			return nil
+		},
+	}
+	addPaginationFlags(bpFooterCommentsCmd)
+	addSortFlag(bpFooterCommentsCmd)
+	addStatusFlag(bpFooterCommentsCmd)
+	addBodyFormatFlag(bpFooterCommentsCmd)
+	confBlogPostCmd.AddCommand(bpFooterCommentsCmd)
+
+	// blogpost inline-comments
+	bpInlineCommentsCmd := &cobra.Command{
+		Use:   "inline-comments [blogpost-id]",
+		Short: "Get inline comments for blog post",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			q := getPaginationQuery(cmd)
+			if r := getStringSliceFlag(cmd, "resolution-status"); len(r) > 0 {
+				for _, rs := range r {
+					q.Add("resolution-status", rs)
+				}
+			}
+			data, err := confGet(cmd, "/blogposts/"+args[0]+"/inline-comments", q)
+			if err != nil {
+				return err
+			}
+			printJSON(data)
+			return nil
+		},
+	}
+	addPaginationFlags(bpInlineCommentsCmd)
+	addSortFlag(bpInlineCommentsCmd)
+	addStatusFlag(bpInlineCommentsCmd)
+	addBodyFormatFlag(bpInlineCommentsCmd)
+	bpInlineCommentsCmd.Flags().StringSlice("resolution-status", nil, "Filter by resolution status")
+	confBlogPostCmd.AddCommand(bpInlineCommentsCmd)
+
+	// blogpost custom-content
+	bpCustomContentCmd := &cobra.Command{
+		Use:   "custom-content [blogpost-id]",
+		Short: "Get custom content in blog post",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			q := getPaginationQuery(cmd)
+			if t := getStringFlag(cmd, "type"); t != "" {
+				q.Set("type", t)
+			}
+			data, err := confGet(cmd, "/blogposts/"+args[0]+"/custom-content", q)
+			if err != nil {
+				return err
+			}
+			printJSON(data)
+			return nil
+		},
+	}
+	addPaginationFlags(bpCustomContentCmd)
+	addSortFlag(bpCustomContentCmd)
+	addBodyFormatFlag(bpCustomContentCmd)
+	bpCustomContentCmd.Flags().String("type", "", "Custom content type (required)")
+	confBlogPostCmd.AddCommand(bpCustomContentCmd)
+
+	// blogpost operations
+	bpOperationsCmd := &cobra.Command{
+		Use:   "operations [blogpost-id]",
+		Short: "Get permitted operations for blog post",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			data, err := confGet(cmd, "/blogposts/"+args[0]+"/operations", nil)
+			if err != nil {
+				return err
+			}
+			printJSON(data)
+			return nil
+		},
+	}
+	confBlogPostCmd.AddCommand(bpOperationsCmd)
+
+	// blogpost versions
+	bpVersionsCmd := &cobra.Command{
+		Use:   "versions [blogpost-id]",
+		Short: "Get blog post versions",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			q := getPaginationQuery(cmd)
+			data, err := confGet(cmd, "/blogposts/"+args[0]+"/versions", q)
+			if err != nil {
+				return err
+			}
+			printJSON(data)
+			return nil
+		},
+	}
+	addPaginationFlags(bpVersionsCmd)
+	addSortFlag(bpVersionsCmd)
+	addBodyFormatFlag(bpVersionsCmd)
+	confBlogPostCmd.AddCommand(bpVersionsCmd)
 
 	// blogpost version-details
 	bpVersionDetailCmd := &cobra.Command{
