@@ -160,6 +160,15 @@ func (c *Client) Delete(path string, query url.Values) error {
 	return c.do(req, nil)
 }
 
+// DeleteWithBody performs a DELETE request with a JSON body.
+func (c *Client) DeleteWithBody(path string, body interface{}, v interface{}) error {
+	req, err := c.newRequest("DELETE", path, body)
+	if err != nil {
+		return err
+	}
+	return c.do(req, v)
+}
+
 // Patch performs a PATCH request.
 func (c *Client) Patch(path string, body interface{}, v interface{}) error {
 	req, err := c.newRequest("PATCH", path, body)

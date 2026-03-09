@@ -59,7 +59,9 @@ func (c *Client) ListPipelines(workspace, repoSlug string, opts *ListPipelinesOp
 			params.Set("sort", opts.Sort)
 		}
 	}
-	params.Set("sort", "-created_on")
+	if params.Get("sort") == "" {
+		params.Set("sort", "-created_on")
+	}
 	params.Set("pagelen", "20")
 
 	path := fmt.Sprintf("/repositories/%s/%s/pipelines",

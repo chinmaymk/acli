@@ -86,10 +86,6 @@ func (c *Client) put(path string, body io.Reader) ([]byte, error) {
 	return c.do(http.MethodPut, path, body)
 }
 
-func (c *Client) delete(path string) ([]byte, error) {
-	return c.do(http.MethodDelete, path, nil)
-}
-
 // deleteNoContent is for DELETE endpoints that return 204 No Content
 func (c *Client) deleteNoContent(path string) error {
 	_, err := c.do(http.MethodDelete, path, nil)
