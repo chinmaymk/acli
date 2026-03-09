@@ -46,7 +46,11 @@ var jiraIssueListCmd = &cobra.Command{
 			if status != "" {
 				clauses = append(clauses, fmt.Sprintf("status = %q", status))
 			}
-			jql = strings.Join(clauses, " AND ")
+			if len(clauses) == 0 {
+				jql = "created >= -30d order by created DESC"
+			} else {
+				jql = strings.Join(clauses, " AND ") + " order by created DESC"
+			}
 		}
 
 		fields := []string{"summary", "issuetype", "status", "priority", "assignee"}

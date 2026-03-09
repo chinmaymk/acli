@@ -333,7 +333,7 @@ func (c *Client) SearchJQL(jql string, startAt, maxResults int, fields []string,
 		q.Set("expand", strings.Join(expand, ","))
 	}
 	var result SearchResults
-	err := c.Get("/rest/api/3/search", q, &result)
+	err := c.Get("/rest/api/3/search/jql", q, &result)
 	if err != nil {
 		return nil, err
 	}
@@ -343,7 +343,7 @@ func (c *Client) SearchJQL(jql string, startAt, maxResults int, fields []string,
 // SearchJQLPost searches for issues using JQL via POST.
 func (c *Client) SearchJQLPost(req *SearchRequest) (*SearchResults, error) {
 	var result SearchResults
-	err := c.Post("/rest/api/3/search", req, &result)
+	err := c.Post("/rest/api/3/search/jql", req, &result)
 	if err != nil {
 		return nil, err
 	}
