@@ -307,7 +307,7 @@ func (c *Client) CreatePRComment(workspace, repoSlug string, prID int, content s
 func (c *Client) GetPRDiff(workspace, repoSlug string, prID int) (string, error) {
 	path := fmt.Sprintf("/repositories/%s/%s/pullrequests/%d/diff",
 		url.PathEscape(workspace), url.PathEscape(repoSlug), prID)
-	data, err := c.get(path)
+	data, err := c.getRaw(path)
 	if err != nil {
 		return "", err
 	}

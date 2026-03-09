@@ -727,5 +727,5 @@ func (c *Client) RegisterWebhooks(webhooks map[string]interface{}) ([]Webhook, e
 // DeleteWebhooks deletes webhooks by IDs.
 func (c *Client) DeleteWebhooks(webhookIds []int) error {
 	body := map[string]interface{}{"webhookIds": webhookIds}
-	return c.Post("/rest/api/3/webhook", body, nil)
+	return c.DeleteWithBody("/rest/api/3/webhook", body, nil)
 }
