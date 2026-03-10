@@ -19,11 +19,15 @@ var bbRepoCmd = &cobra.Command{
 func init() {
 	// repo list
 	repoListCmd := &cobra.Command{
-		Use:     "list <workspace>",
+		Use:     "list [workspace]",
 		Short:   "List repositories in a workspace",
 		Aliases: []string{"ls"},
-		Args:    cobra.ExactArgs(1),
+		Args:    cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, err := defaultWorkspace(cmd, args, 0)
+			if err != nil {
+				return err
+			}
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
@@ -32,7 +36,7 @@ func init() {
 			role, _ := cmd.Flags().GetString("role")
 			q, _ := cmd.Flags().GetString("query")
 			sort, _ := cmd.Flags().GetString("sort")
-			repos, err := client.ListRepositories(args[0], &bitbucket.ListReposOptions{
+			repos, err := client.ListRepositories(workspace, &bitbucket.ListReposOptions{
 				Role: role,
 				Q:    q,
 				Sort: sort,
@@ -57,16 +61,20 @@ func init() {
 
 	// repo get
 	bbRepoCmd.AddCommand(&cobra.Command{
-		Use:   "get <workspace> <repo-slug>",
+		Use:   "get [workspace] <repo-slug>",
 		Short: "Get repository details",
-		Args:  cobra.ExactArgs(2),
+		Args:  cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, repoSlug, err := resolveWorkspaceAndRepo(cmd, args)
+			if err != nil {
+				return err
+			}
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
 			}
 
-			repo, err := client.GetRepository(args[0], args[1])
+			repo, err := client.GetRepository(workspace, repoSlug)
 			if err != nil {
 				return err
 			}
@@ -91,10 +99,14 @@ func init() {
 
 	// repo create
 	repoCreateCmd := &cobra.Command{
-		Use:   "create <workspace>",
+		Use:   "create [workspace]",
 		Short: "Create a new repository",
-		Args:  cobra.ExactArgs(1),
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, err := defaultWorkspace(cmd, args, 0)
+			if err != nil {
+				return err
+			}
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
@@ -123,7 +135,7 @@ func init() {
 				}{Key: projectKey}
 			}
 
-			repo, err := client.CreateRepository(args[0], req)
+			repo, err := client.CreateRepository(workspace, req)
 			if err != nil {
 				return err
 			}
@@ -142,28 +154,36 @@ func init() {
 
 	// repo delete
 	bbRepoCmd.AddCommand(&cobra.Command{
-		Use:   "delete <workspace> <repo-slug>",
+		Use:   "delete [workspace] <repo-slug>",
 		Short: "Delete a repository",
-		Args:  cobra.ExactArgs(2),
+		Args:  cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, repoSlug, err := resolveWorkspaceAndRepo(cmd, args)
+			if err != nil {
+				return err
+			}
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
 			}
-			if err := client.DeleteRepository(args[0], args[1]); err != nil {
+			if err := client.DeleteRepository(workspace, repoSlug); err != nil {
 				return err
 			}
-			fmt.Printf("Deleted repository: %s/%s\n", args[0], args[1])
+			fmt.Printf("Deleted repository: %s/%s\n", workspace, repoSlug)
 			return nil
 		},
 	})
 
 	// repo fork
 	repoForkCmd := &cobra.Command{
-		Use:   "fork <workspace> <repo-slug>",
+		Use:   "fork [workspace] <repo-slug>",
 		Short: "Fork a repository",
-		Args:  cobra.ExactArgs(2),
+		Args:  cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, repoSlug, err := resolveWorkspaceAndRepo(cmd, args)
+			if err != nil {
+				return err
+			}
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
@@ -181,7 +201,7 @@ func init() {
 				}{Slug: targetWorkspace}
 			}
 
-			repo, err := client.ForkRepository(args[0], args[1], req)
+			repo, err := client.ForkRepository(workspace, repoSlug, req)
 			if err != nil {
 				return err
 			}
@@ -197,16 +217,20 @@ func init() {
 
 	// repo forks (list forks)
 	bbRepoCmd.AddCommand(&cobra.Command{
-		Use:   "forks <workspace> <repo-slug>",
+		Use:   "forks [workspace] <repo-slug>",
 		Short: "List forks of a repository",
-		Args:  cobra.ExactArgs(2),
+		Args:  cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, repoSlug, err := resolveWorkspaceAndRepo(cmd, args)
+			if err != nil {
+				return err
+			}
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
 			}
 
-			forks, err := client.ListForks(args[0], args[1])
+			forks, err := client.ListForks(workspace, repoSlug)
 			if err != nil {
 				return err
 			}

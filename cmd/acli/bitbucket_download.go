@@ -18,17 +18,21 @@ var bbDownloadCmd = &cobra.Command{
 func init() {
 	// download list
 	bbDownloadCmd.AddCommand(&cobra.Command{
-		Use:     "list <workspace> <repo-slug>",
+		Use:     "list [workspace] <repo-slug>",
 		Short:   "List downloads for a repository",
 		Aliases: []string{"ls"},
-		Args:    cobra.ExactArgs(2),
+		Args:    cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, repoSlug, err := resolveWorkspaceAndRepo(cmd, args)
+			if err != nil {
+				return err
+			}
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
 			}
 
-			downloads, err := client.ListDownloads(args[0], args[1])
+			downloads, err := client.ListDownloads(workspace, repoSlug)
 			if err != nil {
 				return err
 			}
@@ -45,18 +49,22 @@ func init() {
 
 	// download delete
 	bbDownloadCmd.AddCommand(&cobra.Command{
-		Use:   "delete <workspace> <repo-slug> <filename>",
+		Use:   "delete [workspace] <repo-slug> <filename>",
 		Short: "Delete a download artifact",
-		Args:  cobra.ExactArgs(3),
+		Args:  cobra.RangeArgs(2, 3),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, repoSlug, filename, err := resolveWorkspaceRepoAndID(cmd, args)
+			if err != nil {
+				return err
+			}
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
 			}
-			if err := client.DeleteDownload(args[0], args[1], args[2]); err != nil {
+			if err := client.DeleteDownload(workspace, repoSlug, filename); err != nil {
 				return err
 			}
-			fmt.Printf("Deleted download: %s\n", args[2])
+			fmt.Printf("Deleted download: %s\n", filename)
 			return nil
 		},
 	})

@@ -87,7 +87,7 @@ var jiraUserAssignableCmd = &cobra.Command{
 			return err
 		}
 		query, _ := cmd.Flags().GetString("query")
-		project, _ := cmd.Flags().GetString("project")
+		project, _ := defaultProject(cmd)
 		issueKey, _ := cmd.Flags().GetString("issue-key")
 		maxResults, _ := cmd.Flags().GetInt("max-results")
 
@@ -376,7 +376,7 @@ func init() {
 	jiraUserCmd.AddCommand(jiraUserSearchCmd)
 
 	jiraUserAssignableCmd.Flags().String("query", "", "Search query")
-	jiraUserAssignableCmd.Flags().String("project", "", "Project key")
+	jiraUserAssignableCmd.Flags().String("project", "", "Project key (uses profile default if not set)")
 	jiraUserAssignableCmd.Flags().String("issue-key", "", "Issue key")
 	jiraUserAssignableCmd.Flags().Int("max-results", 50, "Maximum number of results")
 	jiraUserCmd.AddCommand(jiraUserAssignableCmd)

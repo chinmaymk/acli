@@ -7,11 +7,17 @@ import (
 	"path/filepath"
 )
 
+type Defaults struct {
+	Project   string `json:"project,omitempty"`
+	Workspace string `json:"workspace,omitempty"`
+}
+
 type Profile struct {
-	Name         string `json:"name"`
-	AtlassianURL string `json:"atlassian_url"`
-	Email        string `json:"email"`
-	APIToken     string `json:"api_token"`
+	Name         string   `json:"name"`
+	AtlassianURL string   `json:"atlassian_url"`
+	Email        string   `json:"email"`
+	APIToken     string   `json:"api_token"`
+	Defaults     Defaults `json:"defaults,omitempty"`
 }
 
 type Config struct {

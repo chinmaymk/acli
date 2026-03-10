@@ -20,17 +20,21 @@ var bbWebhookCmd = &cobra.Command{
 func init() {
 	// webhook list (repo-level)
 	bbWebhookCmd.AddCommand(&cobra.Command{
-		Use:     "list <workspace> <repo-slug>",
+		Use:     "list [workspace] <repo-slug>",
 		Short:   "List webhooks for a repository",
 		Aliases: []string{"ls"},
-		Args:    cobra.ExactArgs(2),
+		Args:    cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, repoSlug, err := resolveWorkspaceAndRepo(cmd, args)
+			if err != nil {
+				return err
+			}
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
 			}
 
-			hooks, err := client.ListRepoWebhooks(args[0], args[1])
+			hooks, err := client.ListRepoWebhooks(workspace, repoSlug)
 			if err != nil {
 				return err
 			}
@@ -47,16 +51,20 @@ func init() {
 
 	// webhook get
 	bbWebhookCmd.AddCommand(&cobra.Command{
-		Use:   "get <workspace> <repo-slug> <webhook-uuid>",
+		Use:   "get [workspace] <repo-slug> <webhook-uuid>",
 		Short: "Get webhook details",
-		Args:  cobra.ExactArgs(3),
+		Args:  cobra.RangeArgs(2, 3),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, repoSlug, hookUUID, err := resolveWorkspaceRepoAndID(cmd, args)
+			if err != nil {
+				return err
+			}
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
 			}
 
-			hook, err := client.GetRepoWebhook(args[0], args[1], args[2])
+			hook, err := client.GetRepoWebhook(workspace, repoSlug, hookUUID)
 			if err != nil {
 				return err
 			}
@@ -72,10 +80,14 @@ func init() {
 
 	// webhook create
 	webhookCreateCmd := &cobra.Command{
-		Use:   "create <workspace> <repo-slug>",
+		Use:   "create [workspace] <repo-slug>",
 		Short: "Create a webhook for a repository",
-		Args:  cobra.ExactArgs(2),
+		Args:  cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, repoSlug, err := resolveWorkspaceAndRepo(cmd, args)
+			if err != nil {
+				return err
+			}
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
@@ -90,7 +102,7 @@ func init() {
 				return fmt.Errorf("--url and --events are required")
 			}
 
-			hook, err := client.CreateRepoWebhook(args[0], args[1], &bitbucket.CreateWebhookRequest{
+			hook, err := client.CreateRepoWebhook(workspace, repoSlug, &bitbucket.CreateWebhookRequest{
 				Description: desc,
 				URL:         webhookURL,
 				Active:      active,
@@ -113,34 +125,42 @@ func init() {
 
 	// webhook delete
 	bbWebhookCmd.AddCommand(&cobra.Command{
-		Use:   "delete <workspace> <repo-slug> <webhook-uuid>",
+		Use:   "delete [workspace] <repo-slug> <webhook-uuid>",
 		Short: "Delete a webhook",
-		Args:  cobra.ExactArgs(3),
+		Args:  cobra.RangeArgs(2, 3),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, repoSlug, hookUUID, err := resolveWorkspaceRepoAndID(cmd, args)
+			if err != nil {
+				return err
+			}
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
 			}
-			if err := client.DeleteRepoWebhook(args[0], args[1], args[2]); err != nil {
+			if err := client.DeleteRepoWebhook(workspace, repoSlug, hookUUID); err != nil {
 				return err
 			}
-			fmt.Printf("Deleted webhook: %s\n", args[2])
+			fmt.Printf("Deleted webhook: %s\n", hookUUID)
 			return nil
 		},
 	})
 
 	// webhook list-workspace
 	bbWebhookCmd.AddCommand(&cobra.Command{
-		Use:   "list-workspace <workspace>",
+		Use:   "list-workspace [workspace]",
 		Short: "List webhooks for a workspace",
-		Args:  cobra.ExactArgs(1),
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, err := defaultWorkspace(cmd, args, 0)
+			if err != nil {
+				return err
+			}
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
 			}
 
-			hooks, err := client.ListWorkspaceWebhooks(args[0])
+			hooks, err := client.ListWorkspaceWebhooks(workspace)
 			if err != nil {
 				return err
 			}
@@ -157,10 +177,14 @@ func init() {
 
 	// webhook create-workspace
 	wsWebhookCreateCmd := &cobra.Command{
-		Use:   "create-workspace <workspace>",
+		Use:   "create-workspace [workspace]",
 		Short: "Create a webhook for a workspace",
-		Args:  cobra.ExactArgs(1),
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, err := defaultWorkspace(cmd, args, 0)
+			if err != nil {
+				return err
+			}
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
@@ -175,7 +199,7 @@ func init() {
 				return fmt.Errorf("--url and --events are required")
 			}
 
-			hook, err := client.CreateWorkspaceWebhook(args[0], &bitbucket.CreateWebhookRequest{
+			hook, err := client.CreateWorkspaceWebhook(workspace, &bitbucket.CreateWebhookRequest{
 				Description: desc,
 				URL:         webhookURL,
 				Active:      active,
@@ -197,18 +221,30 @@ func init() {
 
 	// webhook delete-workspace
 	bbWebhookCmd.AddCommand(&cobra.Command{
-		Use:   "delete-workspace <workspace> <webhook-uuid>",
+		Use:   "delete-workspace [workspace] <webhook-uuid>",
 		Short: "Delete a workspace webhook",
-		Args:  cobra.ExactArgs(2),
+		Args:  cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			var workspace, hookUUID string
+			if len(args) >= 2 {
+				workspace = args[0]
+				hookUUID = args[1]
+			} else {
+				var err error
+				workspace, err = defaultWorkspace(cmd, nil, 0)
+				if err != nil {
+					return err
+				}
+				hookUUID = args[0]
+			}
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
 			}
-			if err := client.DeleteWorkspaceWebhook(args[0], args[1]); err != nil {
+			if err := client.DeleteWorkspaceWebhook(workspace, hookUUID); err != nil {
 				return err
 			}
-			fmt.Printf("Deleted workspace webhook: %s\n", args[1])
+			fmt.Printf("Deleted workspace webhook: %s\n", hookUUID)
 			return nil
 		},
 	})

@@ -28,7 +28,7 @@ var jiraIssueListCmd = &cobra.Command{
 		}
 
 		jql, _ := cmd.Flags().GetString("jql")
-		project, _ := cmd.Flags().GetString("project")
+		project, _ := defaultProject(cmd)
 		assignee, _ := cmd.Flags().GetString("assignee")
 		status, _ := cmd.Flags().GetString("status")
 		maxResults, _ := cmd.Flags().GetInt("max-results")
@@ -191,7 +191,13 @@ var jiraIssueCreateCmd = &cobra.Command{
 			return err
 		}
 
-		project, _ := cmd.Flags().GetString("project")
+		project, err := defaultProject(cmd)
+		if err != nil {
+			return err
+		}
+		if project == "" {
+			return fmt.Errorf("--project is required (or set a default with 'acli config set-defaults')")
+		}
 		issueType, _ := cmd.Flags().GetString("type")
 		summary, _ := cmd.Flags().GetString("summary")
 		description, _ := cmd.Flags().GetString("description")
@@ -1089,7 +1095,7 @@ var jiraIssueEditMetaCmd = &cobra.Command{
 func init() {
 	// issue list flags
 	jiraIssueListCmd.Flags().String("jql", "", "JQL query string (overrides convenience flags)")
-	jiraIssueListCmd.Flags().String("project", "", "Filter by project key")
+	jiraIssueListCmd.Flags().String("project", "", "Filter by project key (uses profile default if not set)")
 	jiraIssueListCmd.Flags().String("assignee", "", "Filter by assignee")
 	jiraIssueListCmd.Flags().String("status", "", "Filter by status")
 	jiraIssueListCmd.Flags().Int("max-results", 50, "Maximum number of results")
@@ -1100,7 +1106,7 @@ func init() {
 	jiraIssueGetCmd.Flags().Bool("json", false, "Output as JSON")
 
 	// issue create flags
-	jiraIssueCreateCmd.Flags().String("project", "", "Project key (required)")
+	jiraIssueCreateCmd.Flags().String("project", "", "Project key (uses profile default if not set)")
 	jiraIssueCreateCmd.Flags().String("type", "Task", "Issue type")
 	jiraIssueCreateCmd.Flags().String("summary", "", "Issue summary (required)")
 	jiraIssueCreateCmd.Flags().String("description", "", "Issue description")
@@ -1108,7 +1114,6 @@ func init() {
 	jiraIssueCreateCmd.Flags().String("priority", "", "Priority name")
 	jiraIssueCreateCmd.Flags().StringSlice("labels", nil, "Labels")
 	jiraIssueCreateCmd.Flags().StringSlice("components", nil, "Component names")
-	_ = jiraIssueCreateCmd.MarkFlagRequired("project")
 	_ = jiraIssueCreateCmd.MarkFlagRequired("summary")
 
 	// issue edit flags

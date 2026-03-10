@@ -19,18 +19,22 @@ var bbPRCmd = &cobra.Command{
 func init() {
 	// pr list
 	prListCmd := &cobra.Command{
-		Use:     "list <workspace> <repo-slug>",
+		Use:     "list [workspace] <repo-slug>",
 		Short:   "List pull requests",
 		Aliases: []string{"ls"},
-		Args:    cobra.ExactArgs(2),
+		Args:    cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, repoSlug, err := resolveWorkspaceAndRepo(cmd, args)
+			if err != nil {
+				return err
+			}
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
 			}
 
 			state, _ := cmd.Flags().GetString("state")
-			prs, err := client.ListPullRequests(args[0], args[1], &bitbucket.ListPRsOptions{
+			prs, err := client.ListPullRequests(workspace, repoSlug, &bitbucket.ListPRsOptions{
 				State: state,
 			})
 			if err != nil {
@@ -52,21 +56,26 @@ func init() {
 
 	// pr get
 	bbPRCmd.AddCommand(&cobra.Command{
-		Use:   "get <workspace> <repo-slug> <pr-id>",
+		Use:   "get [workspace] <repo-slug> <pr-id>",
 		Short: "Get pull request details",
-		Args:  cobra.ExactArgs(3),
+		Args:  cobra.RangeArgs(2, 3),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, repoSlug, idStr, err := resolveWorkspaceRepoAndID(cmd, args)
+			if err != nil {
+				return err
+			}
+
+			prID, err := strconv.Atoi(idStr)
+			if err != nil {
+				return fmt.Errorf("invalid PR ID: %s", idStr)
+			}
+
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
 			}
 
-			prID, err := strconv.Atoi(args[2])
-			if err != nil {
-				return fmt.Errorf("invalid PR ID: %s", args[2])
-			}
-
-			pr, err := client.GetPullRequest(args[0], args[1], prID)
+			pr, err := client.GetPullRequest(workspace, repoSlug, prID)
 			if err != nil {
 				return err
 			}
@@ -91,10 +100,14 @@ func init() {
 
 	// pr create
 	prCreateCmd := &cobra.Command{
-		Use:   "create <workspace> <repo-slug>",
+		Use:   "create [workspace] <repo-slug>",
 		Short: "Create a pull request",
-		Args:  cobra.ExactArgs(2),
+		Args:  cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, repoSlug, err := resolveWorkspaceAndRepo(cmd, args)
+			if err != nil {
+				return err
+			}
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
@@ -110,7 +123,7 @@ func init() {
 				return fmt.Errorf("--title and --source are required")
 			}
 
-			pr, err := client.CreatePullRequest(args[0], args[1], &bitbucket.CreatePRRequest{
+			pr, err := client.CreatePullRequest(workspace, repoSlug, &bitbucket.CreatePRRequest{
 				Title:             title,
 				Description:       desc,
 				SourceBranch:      source,
@@ -135,19 +148,23 @@ func init() {
 
 	// pr approve
 	bbPRCmd.AddCommand(&cobra.Command{
-		Use:   "approve <workspace> <repo-slug> <pr-id>",
+		Use:   "approve [workspace] <repo-slug> <pr-id>",
 		Short: "Approve a pull request",
-		Args:  cobra.ExactArgs(3),
+		Args:  cobra.RangeArgs(2, 3),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, repoSlug, idStr, err := resolveWorkspaceRepoAndID(cmd, args)
+			if err != nil {
+				return err
+			}
+			prID, err := strconv.Atoi(idStr)
+			if err != nil {
+				return fmt.Errorf("invalid PR ID: %s", idStr)
+			}
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
 			}
-			prID, err := strconv.Atoi(args[2])
-			if err != nil {
-				return fmt.Errorf("invalid PR ID: %s", args[2])
-			}
-			if err := client.ApprovePullRequest(args[0], args[1], prID); err != nil {
+			if err := client.ApprovePullRequest(workspace, repoSlug, prID); err != nil {
 				return err
 			}
 			fmt.Printf("Approved PR #%d\n", prID)
@@ -157,19 +174,23 @@ func init() {
 
 	// pr unapprove
 	bbPRCmd.AddCommand(&cobra.Command{
-		Use:   "unapprove <workspace> <repo-slug> <pr-id>",
+		Use:   "unapprove [workspace] <repo-slug> <pr-id>",
 		Short: "Remove approval from a pull request",
-		Args:  cobra.ExactArgs(3),
+		Args:  cobra.RangeArgs(2, 3),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, repoSlug, idStr, err := resolveWorkspaceRepoAndID(cmd, args)
+			if err != nil {
+				return err
+			}
+			prID, err := strconv.Atoi(idStr)
+			if err != nil {
+				return fmt.Errorf("invalid PR ID: %s", idStr)
+			}
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
 			}
-			prID, err := strconv.Atoi(args[2])
-			if err != nil {
-				return fmt.Errorf("invalid PR ID: %s", args[2])
-			}
-			if err := client.UnapprovePullRequest(args[0], args[1], prID); err != nil {
+			if err := client.UnapprovePullRequest(workspace, repoSlug, prID); err != nil {
 				return err
 			}
 			fmt.Printf("Removed approval from PR #%d\n", prID)
@@ -179,19 +200,23 @@ func init() {
 
 	// pr decline
 	bbPRCmd.AddCommand(&cobra.Command{
-		Use:   "decline <workspace> <repo-slug> <pr-id>",
+		Use:   "decline [workspace] <repo-slug> <pr-id>",
 		Short: "Decline a pull request",
-		Args:  cobra.ExactArgs(3),
+		Args:  cobra.RangeArgs(2, 3),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, repoSlug, idStr, err := resolveWorkspaceRepoAndID(cmd, args)
+			if err != nil {
+				return err
+			}
+			prID, err := strconv.Atoi(idStr)
+			if err != nil {
+				return fmt.Errorf("invalid PR ID: %s", idStr)
+			}
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
 			}
-			prID, err := strconv.Atoi(args[2])
-			if err != nil {
-				return fmt.Errorf("invalid PR ID: %s", args[2])
-			}
-			if err := client.DeclinePullRequest(args[0], args[1], prID); err != nil {
+			if err := client.DeclinePullRequest(workspace, repoSlug, prID); err != nil {
 				return err
 			}
 			fmt.Printf("Declined PR #%d\n", prID)
@@ -201,17 +226,21 @@ func init() {
 
 	// pr merge
 	prMergeCmd := &cobra.Command{
-		Use:   "merge <workspace> <repo-slug> <pr-id>",
+		Use:   "merge [workspace] <repo-slug> <pr-id>",
 		Short: "Merge a pull request",
-		Args:  cobra.ExactArgs(3),
+		Args:  cobra.RangeArgs(2, 3),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			client, err := getBitbucketClient(cmd)
+			workspace, repoSlug, idStr, err := resolveWorkspaceRepoAndID(cmd, args)
 			if err != nil {
 				return err
 			}
-			prID, err := strconv.Atoi(args[2])
+			prID, err := strconv.Atoi(idStr)
 			if err != nil {
-				return fmt.Errorf("invalid PR ID: %s", args[2])
+				return fmt.Errorf("invalid PR ID: %s", idStr)
+			}
+			client, err := getBitbucketClient(cmd)
+			if err != nil {
+				return err
 			}
 
 			strategy, _ := cmd.Flags().GetString("strategy")
@@ -226,7 +255,7 @@ func init() {
 				req.CloseSourceBranch = &closeBranch
 			}
 
-			pr, err := client.MergePullRequest(args[0], args[1], prID, req)
+			pr, err := client.MergePullRequest(workspace, repoSlug, prID, req)
 			if err != nil {
 				return err
 			}
@@ -241,19 +270,23 @@ func init() {
 
 	// pr request-changes
 	bbPRCmd.AddCommand(&cobra.Command{
-		Use:   "request-changes <workspace> <repo-slug> <pr-id>",
+		Use:   "request-changes [workspace] <repo-slug> <pr-id>",
 		Short: "Request changes on a pull request",
-		Args:  cobra.ExactArgs(3),
+		Args:  cobra.RangeArgs(2, 3),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, repoSlug, idStr, err := resolveWorkspaceRepoAndID(cmd, args)
+			if err != nil {
+				return err
+			}
+			prID, err := strconv.Atoi(idStr)
+			if err != nil {
+				return fmt.Errorf("invalid PR ID: %s", idStr)
+			}
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
 			}
-			prID, err := strconv.Atoi(args[2])
-			if err != nil {
-				return fmt.Errorf("invalid PR ID: %s", args[2])
-			}
-			if err := client.RequestChangesPullRequest(args[0], args[1], prID); err != nil {
+			if err := client.RequestChangesPullRequest(workspace, repoSlug, prID); err != nil {
 				return err
 			}
 			fmt.Printf("Requested changes on PR #%d\n", prID)
@@ -263,20 +296,24 @@ func init() {
 
 	// pr comments
 	bbPRCmd.AddCommand(&cobra.Command{
-		Use:   "comments <workspace> <repo-slug> <pr-id>",
+		Use:   "comments [workspace] <repo-slug> <pr-id>",
 		Short: "List comments on a pull request",
-		Args:  cobra.ExactArgs(3),
+		Args:  cobra.RangeArgs(2, 3),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, repoSlug, idStr, err := resolveWorkspaceRepoAndID(cmd, args)
+			if err != nil {
+				return err
+			}
+			prID, err := strconv.Atoi(idStr)
+			if err != nil {
+				return fmt.Errorf("invalid PR ID: %s", idStr)
+			}
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
 			}
-			prID, err := strconv.Atoi(args[2])
-			if err != nil {
-				return fmt.Errorf("invalid PR ID: %s", args[2])
-			}
 
-			comments, err := client.ListPRComments(args[0], args[1], prID)
+			comments, err := client.ListPRComments(workspace, repoSlug, prID)
 			if err != nil {
 				return err
 			}
@@ -294,17 +331,21 @@ func init() {
 
 	// pr comment (add a comment)
 	prCommentCmd := &cobra.Command{
-		Use:   "comment <workspace> <repo-slug> <pr-id>",
+		Use:   "comment [workspace] <repo-slug> <pr-id>",
 		Short: "Add a comment to a pull request",
-		Args:  cobra.ExactArgs(3),
+		Args:  cobra.RangeArgs(2, 3),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			client, err := getBitbucketClient(cmd)
+			workspace, repoSlug, idStr, err := resolveWorkspaceRepoAndID(cmd, args)
 			if err != nil {
 				return err
 			}
-			prID, err := strconv.Atoi(args[2])
+			prID, err := strconv.Atoi(idStr)
 			if err != nil {
-				return fmt.Errorf("invalid PR ID: %s", args[2])
+				return fmt.Errorf("invalid PR ID: %s", idStr)
+			}
+			client, err := getBitbucketClient(cmd)
+			if err != nil {
+				return err
 			}
 
 			body, _ := cmd.Flags().GetString("body")
@@ -312,7 +353,7 @@ func init() {
 				return fmt.Errorf("--body is required")
 			}
 
-			comment, err := client.CreatePRComment(args[0], args[1], prID, body)
+			comment, err := client.CreatePRComment(workspace, repoSlug, prID, body)
 			if err != nil {
 				return err
 			}
@@ -325,20 +366,24 @@ func init() {
 
 	// pr diff
 	bbPRCmd.AddCommand(&cobra.Command{
-		Use:   "diff <workspace> <repo-slug> <pr-id>",
+		Use:   "diff [workspace] <repo-slug> <pr-id>",
 		Short: "Get the diff of a pull request",
-		Args:  cobra.ExactArgs(3),
+		Args:  cobra.RangeArgs(2, 3),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, repoSlug, idStr, err := resolveWorkspaceRepoAndID(cmd, args)
+			if err != nil {
+				return err
+			}
+			prID, err := strconv.Atoi(idStr)
+			if err != nil {
+				return fmt.Errorf("invalid PR ID: %s", idStr)
+			}
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
 			}
-			prID, err := strconv.Atoi(args[2])
-			if err != nil {
-				return fmt.Errorf("invalid PR ID: %s", args[2])
-			}
 
-			diff, err := client.GetPRDiff(args[0], args[1], prID)
+			diff, err := client.GetPRDiff(workspace, repoSlug, prID)
 			if err != nil {
 				return err
 			}

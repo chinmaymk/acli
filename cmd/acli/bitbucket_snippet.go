@@ -19,17 +19,21 @@ var bbSnippetCmd = &cobra.Command{
 func init() {
 	// snippet list
 	bbSnippetCmd.AddCommand(&cobra.Command{
-		Use:     "list <workspace>",
+		Use:     "list [workspace]",
 		Short:   "List snippets in a workspace",
 		Aliases: []string{"ls"},
-		Args:    cobra.ExactArgs(1),
+		Args:    cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, err := defaultWorkspace(cmd, args, 0)
+			if err != nil {
+				return err
+			}
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
 			}
 
-			snippets, err := client.ListSnippets(args[0])
+			snippets, err := client.ListSnippets(workspace)
 			if err != nil {
 				return err
 			}
@@ -46,16 +50,28 @@ func init() {
 
 	// snippet get
 	bbSnippetCmd.AddCommand(&cobra.Command{
-		Use:   "get <workspace> <snippet-id>",
+		Use:   "get [workspace] <snippet-id>",
 		Short: "Get snippet details",
-		Args:  cobra.ExactArgs(2),
+		Args:  cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			var workspace, snippetID string
+			if len(args) >= 2 {
+				workspace = args[0]
+				snippetID = args[1]
+			} else {
+				var err error
+				workspace, err = defaultWorkspace(cmd, nil, 0)
+				if err != nil {
+					return err
+				}
+				snippetID = args[0]
+			}
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
 			}
 
-			snippet, err := client.GetSnippet(args[0], args[1])
+			snippet, err := client.GetSnippet(workspace, snippetID)
 			if err != nil {
 				return err
 			}
@@ -73,10 +89,14 @@ func init() {
 
 	// snippet create
 	snippetCreateCmd := &cobra.Command{
-		Use:   "create <workspace>",
+		Use:   "create [workspace]",
 		Short: "Create a snippet",
-		Args:  cobra.ExactArgs(1),
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, err := defaultWorkspace(cmd, args, 0)
+			if err != nil {
+				return err
+			}
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
@@ -89,7 +109,7 @@ func init() {
 				return fmt.Errorf("--title is required")
 			}
 
-			snippet, err := client.CreateSnippet(args[0], &bitbucket.CreateSnippetRequest{
+			snippet, err := client.CreateSnippet(workspace, &bitbucket.CreateSnippetRequest{
 				Title:     title,
 				IsPrivate: isPrivate,
 			})
@@ -108,18 +128,30 @@ func init() {
 
 	// snippet delete
 	bbSnippetCmd.AddCommand(&cobra.Command{
-		Use:   "delete <workspace> <snippet-id>",
+		Use:   "delete [workspace] <snippet-id>",
 		Short: "Delete a snippet",
-		Args:  cobra.ExactArgs(2),
+		Args:  cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			var workspace, snippetID string
+			if len(args) >= 2 {
+				workspace = args[0]
+				snippetID = args[1]
+			} else {
+				var err error
+				workspace, err = defaultWorkspace(cmd, nil, 0)
+				if err != nil {
+					return err
+				}
+				snippetID = args[0]
+			}
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
 			}
-			if err := client.DeleteSnippet(args[0], args[1]); err != nil {
+			if err := client.DeleteSnippet(workspace, snippetID); err != nil {
 				return err
 			}
-			fmt.Printf("Deleted snippet: %s\n", args[1])
+			fmt.Printf("Deleted snippet: %s\n", snippetID)
 			return nil
 		},
 	})

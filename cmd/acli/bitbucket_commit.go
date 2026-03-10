@@ -19,11 +19,15 @@ var bbCommitCmd = &cobra.Command{
 func init() {
 	// commit list
 	commitListCmd := &cobra.Command{
-		Use:     "list <workspace> <repo-slug>",
+		Use:     "list [workspace] <repo-slug>",
 		Short:   "List commits",
 		Aliases: []string{"ls"},
-		Args:    cobra.ExactArgs(2),
+		Args:    cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, repoSlug, err := resolveWorkspaceAndRepo(cmd, args)
+			if err != nil {
+				return err
+			}
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
@@ -32,7 +36,7 @@ func init() {
 			include, _ := cmd.Flags().GetString("include")
 			exclude, _ := cmd.Flags().GetString("exclude")
 
-			commits, err := client.ListCommits(args[0], args[1], include, exclude)
+			commits, err := client.ListCommits(workspace, repoSlug, include, exclude)
 			if err != nil {
 				return err
 			}
@@ -60,16 +64,20 @@ func init() {
 
 	// commit get
 	bbCommitCmd.AddCommand(&cobra.Command{
-		Use:   "get <workspace> <repo-slug> <commit-hash>",
+		Use:   "get [workspace] <repo-slug> <commit-hash>",
 		Short: "Get commit details",
-		Args:  cobra.ExactArgs(3),
+		Args:  cobra.RangeArgs(2, 3),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, repoSlug, commitHash, err := resolveWorkspaceRepoAndID(cmd, args)
+			if err != nil {
+				return err
+			}
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
 			}
 
-			commit, err := client.GetCommit(args[0], args[1], args[2])
+			commit, err := client.GetCommit(workspace, repoSlug, commitHash)
 			if err != nil {
 				return err
 			}
@@ -92,16 +100,20 @@ func init() {
 
 	// commit statuses
 	bbCommitCmd.AddCommand(&cobra.Command{
-		Use:   "statuses <workspace> <repo-slug> <commit-hash>",
+		Use:   "statuses [workspace] <repo-slug> <commit-hash>",
 		Short: "List build statuses for a commit",
-		Args:  cobra.ExactArgs(3),
+		Args:  cobra.RangeArgs(2, 3),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, repoSlug, commitHash, err := resolveWorkspaceRepoAndID(cmd, args)
+			if err != nil {
+				return err
+			}
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
 			}
 
-			statuses, err := client.ListCommitStatuses(args[0], args[1], args[2])
+			statuses, err := client.ListCommitStatuses(workspace, repoSlug, commitHash)
 			if err != nil {
 				return err
 			}
@@ -118,16 +130,20 @@ func init() {
 
 	// commit diff
 	bbCommitCmd.AddCommand(&cobra.Command{
-		Use:   "diff <workspace> <repo-slug> <spec>",
+		Use:   "diff [workspace] <repo-slug> <spec>",
 		Short: "Get diff between two commits (e.g. commit1..commit2)",
-		Args:  cobra.ExactArgs(3),
+		Args:  cobra.RangeArgs(2, 3),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, repoSlug, spec, err := resolveWorkspaceRepoAndID(cmd, args)
+			if err != nil {
+				return err
+			}
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
 			}
 
-			diff, err := client.GetDiff(args[0], args[1], args[2])
+			diff, err := client.GetDiff(workspace, repoSlug, spec)
 			if err != nil {
 				return err
 			}

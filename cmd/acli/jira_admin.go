@@ -1289,7 +1289,7 @@ var jiraPermissionMineCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		project, _ := cmd.Flags().GetString("project")
+		project, _ := defaultProject(cmd)
 		issue, _ := cmd.Flags().GetString("issue")
 		perms, err := client.GetMyPermissions(project, issue)
 		if err != nil {
@@ -1647,7 +1647,7 @@ func init() {
 	jiraCmd.AddCommand(jiraConfigurationCmd)
 
 	// --- Permissions ---
-	jiraPermissionMineCmd.Flags().String("project", "", "Project key")
+	jiraPermissionMineCmd.Flags().String("project", "", "Project key (uses profile default if not set)")
 	jiraPermissionMineCmd.Flags().String("issue", "", "Issue key")
 	jiraPermissionCmd.AddCommand(jiraPermissionMineCmd)
 	jiraPermissionCmd.AddCommand(jiraPermissionAllCmd)

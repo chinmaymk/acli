@@ -16,10 +16,14 @@ var bbSearchCmd = &cobra.Command{
 func init() {
 	// search code
 	searchCodeCmd := &cobra.Command{
-		Use:   "code <workspace>",
+		Use:   "code [workspace]",
 		Short: "Search for code in a workspace",
-		Args:  cobra.ExactArgs(1),
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, err := defaultWorkspace(cmd, args, 0)
+			if err != nil {
+				return err
+			}
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
@@ -30,7 +34,7 @@ func init() {
 				return fmt.Errorf("--query is required")
 			}
 
-			results, err := client.SearchCode(args[0], query)
+			results, err := client.SearchCode(workspace, query)
 			if err != nil {
 				return err
 			}

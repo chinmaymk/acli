@@ -143,6 +143,15 @@ var configShowCmd = &cobra.Command{
 		fmt.Printf("  Atlassian URL:    %s\n", p.AtlassianURL)
 		fmt.Printf("  Email:            %s\n", p.Email)
 		fmt.Printf("  API Token:        %s\n", maskToken(p.APIToken))
+		if p.Defaults.Project != "" || p.Defaults.Workspace != "" {
+			fmt.Println("  Defaults:")
+			if p.Defaults.Project != "" {
+				fmt.Printf("    Project:        %s\n", p.Defaults.Project)
+			}
+			if p.Defaults.Workspace != "" {
+				fmt.Printf("    Workspace:      %s\n", p.Defaults.Workspace)
+			}
+		}
 		return nil
 	},
 }
@@ -211,12 +220,65 @@ var configSetDefaultCmd = &cobra.Command{
 	},
 }
 
+var configSetDefaultsCmd = &cobra.Command{
+	Use:   "set-defaults [profile-name]",
+	Short: "Set default project and workspace for a profile",
+	Long: `Set per-profile defaults so you don't have to specify --project or workspace on every command.
+
+These defaults are used as fallbacks when the flag/argument is not provided:
+  - project: Default Jira project key (used by issue list, issue create, etc.)
+  - workspace: Default Bitbucket workspace (used by repo, pr, pipeline, etc.)`,
+	Args: cobra.MaximumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := config.Load()
+		if err != nil {
+			return fmt.Errorf("loading config: %w", err)
+		}
+
+		profileName := ""
+		if len(args) > 0 {
+			profileName = args[0]
+		}
+		profile, err := cfg.GetProfile(profileName)
+		if err != nil {
+			return err
+		}
+
+		reader := bufio.NewReader(os.Stdin)
+
+		fmt.Printf("Setting defaults for profile %q\n\n", profile.Name)
+
+		project := promptWithDefault(reader, "Default Jira project key", profile.Defaults.Project, "")
+		workspace := promptWithDefault(reader, "Default Bitbucket workspace", profile.Defaults.Workspace, "")
+
+		profile.Defaults = config.Defaults{
+			Project:   project,
+			Workspace: workspace,
+		}
+
+		cfg.Profiles[profile.Name] = profile
+		if err := cfg.Save(); err != nil {
+			return fmt.Errorf("saving config: %w", err)
+		}
+
+		fmt.Printf("\nDefaults saved for profile %q\n", profile.Name)
+		if project != "" {
+			fmt.Printf("  Default project:   %s\n", project)
+		}
+		if workspace != "" {
+			fmt.Printf("  Default workspace: %s\n", workspace)
+		}
+		return nil
+	},
+}
+
 func init() {
 	configCmd.AddCommand(configSetupCmd)
 	configCmd.AddCommand(configListCmd)
 	configCmd.AddCommand(configShowCmd)
 	configCmd.AddCommand(configDeleteCmd)
 	configCmd.AddCommand(configSetDefaultCmd)
+	configCmd.AddCommand(configSetDefaultsCmd)
 }
 
 func promptWithDefault(reader *bufio.Reader, label, current, placeholder string) string {

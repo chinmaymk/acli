@@ -20,17 +20,21 @@ var bbBranchRestrictionCmd = &cobra.Command{
 func init() {
 	// branch-restriction list
 	bbBranchRestrictionCmd.AddCommand(&cobra.Command{
-		Use:     "list <workspace> <repo-slug>",
+		Use:     "list [workspace] <repo-slug>",
 		Short:   "List branch restrictions",
 		Aliases: []string{"ls"},
-		Args:    cobra.ExactArgs(2),
+		Args:    cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, repoSlug, err := resolveWorkspaceAndRepo(cmd, args)
+			if err != nil {
+				return err
+			}
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
 			}
 
-			restrictions, err := client.ListBranchRestrictions(args[0], args[1])
+			restrictions, err := client.ListBranchRestrictions(workspace, repoSlug)
 			if err != nil {
 				return err
 			}
@@ -46,21 +50,26 @@ func init() {
 
 	// branch-restriction get
 	bbBranchRestrictionCmd.AddCommand(&cobra.Command{
-		Use:   "get <workspace> <repo-slug> <restriction-id>",
+		Use:   "get [workspace] <repo-slug> <restriction-id>",
 		Short: "Get branch restriction details",
-		Args:  cobra.ExactArgs(3),
+		Args:  cobra.RangeArgs(2, 3),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, repoSlug, idStr, err := resolveWorkspaceRepoAndID(cmd, args)
+			if err != nil {
+				return err
+			}
+
+			id, err := strconv.Atoi(idStr)
+			if err != nil {
+				return fmt.Errorf("invalid restriction ID: %s", idStr)
+			}
+
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
 			}
 
-			id, err := strconv.Atoi(args[2])
-			if err != nil {
-				return fmt.Errorf("invalid restriction ID: %s", args[2])
-			}
-
-			r, err := client.GetBranchRestriction(args[0], args[1], id)
+			r, err := client.GetBranchRestriction(workspace, repoSlug, id)
 			if err != nil {
 				return err
 			}
@@ -89,10 +98,14 @@ func init() {
 
 	// branch-restriction create
 	brCreateCmd := &cobra.Command{
-		Use:   "create <workspace> <repo-slug>",
+		Use:   "create [workspace] <repo-slug>",
 		Short: "Create a branch restriction",
-		Args:  cobra.ExactArgs(2),
+		Args:  cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, repoSlug, err := resolveWorkspaceAndRepo(cmd, args)
+			if err != nil {
+				return err
+			}
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
@@ -105,7 +118,7 @@ func init() {
 				return fmt.Errorf("--kind and --pattern are required")
 			}
 
-			r, err := client.CreateBranchRestriction(args[0], args[1], &bitbucket.CreateBranchRestrictionRequest{
+			r, err := client.CreateBranchRestriction(workspace, repoSlug, &bitbucket.CreateBranchRestrictionRequest{
 				Kind:    kind,
 				Pattern: pattern,
 			})
@@ -123,21 +136,26 @@ func init() {
 
 	// branch-restriction delete
 	bbBranchRestrictionCmd.AddCommand(&cobra.Command{
-		Use:   "delete <workspace> <repo-slug> <restriction-id>",
+		Use:   "delete [workspace] <repo-slug> <restriction-id>",
 		Short: "Delete a branch restriction",
-		Args:  cobra.ExactArgs(3),
+		Args:  cobra.RangeArgs(2, 3),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, repoSlug, idStr, err := resolveWorkspaceRepoAndID(cmd, args)
+			if err != nil {
+				return err
+			}
+
+			id, err := strconv.Atoi(idStr)
+			if err != nil {
+				return fmt.Errorf("invalid restriction ID: %s", idStr)
+			}
+
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
 			}
 
-			id, err := strconv.Atoi(args[2])
-			if err != nil {
-				return fmt.Errorf("invalid restriction ID: %s", args[2])
-			}
-
-			if err := client.DeleteBranchRestriction(args[0], args[1], id); err != nil {
+			if err := client.DeleteBranchRestriction(workspace, repoSlug, id); err != nil {
 				return err
 			}
 			fmt.Printf("Deleted branch restriction: %d\n", id)

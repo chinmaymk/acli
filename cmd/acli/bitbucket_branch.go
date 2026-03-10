@@ -25,18 +25,22 @@ var bbTagCmd = &cobra.Command{
 func init() {
 	// branch list
 	branchListCmd := &cobra.Command{
-		Use:     "list <workspace> <repo-slug>",
+		Use:     "list [workspace] <repo-slug>",
 		Short:   "List branches",
 		Aliases: []string{"ls"},
-		Args:    cobra.ExactArgs(2),
+		Args:    cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, repoSlug, err := resolveWorkspaceAndRepo(cmd, args)
+			if err != nil {
+				return err
+			}
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
 			}
 
 			q, _ := cmd.Flags().GetString("query")
-			branches, err := client.ListBranches(args[0], args[1], q)
+			branches, err := client.ListBranches(workspace, repoSlug, q)
 			if err != nil {
 				return err
 			}
@@ -59,16 +63,20 @@ func init() {
 
 	// branch get
 	bbBranchCmd.AddCommand(&cobra.Command{
-		Use:   "get <workspace> <repo-slug> <branch-name>",
+		Use:   "get [workspace] <repo-slug> <branch-name>",
 		Short: "Get branch details",
-		Args:  cobra.ExactArgs(3),
+		Args:  cobra.RangeArgs(2, 3),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, repoSlug, branchName, err := resolveWorkspaceRepoAndID(cmd, args)
+			if err != nil {
+				return err
+			}
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
 			}
 
-			branch, err := client.GetBranch(args[0], args[1], args[2])
+			branch, err := client.GetBranch(workspace, repoSlug, branchName)
 			if err != nil {
 				return err
 			}
@@ -84,10 +92,14 @@ func init() {
 
 	// branch create
 	branchCreateCmd := &cobra.Command{
-		Use:   "create <workspace> <repo-slug>",
+		Use:   "create [workspace] <repo-slug>",
 		Short: "Create a branch",
-		Args:  cobra.ExactArgs(2),
+		Args:  cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, repoSlug, err := resolveWorkspaceAndRepo(cmd, args)
+			if err != nil {
+				return err
+			}
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
@@ -104,7 +116,7 @@ func init() {
 			}
 			req.Target.Hash = target
 
-			branch, err := client.CreateBranch(args[0], args[1], req)
+			branch, err := client.CreateBranch(workspace, repoSlug, req)
 			if err != nil {
 				return err
 			}
@@ -118,36 +130,44 @@ func init() {
 
 	// branch delete
 	bbBranchCmd.AddCommand(&cobra.Command{
-		Use:   "delete <workspace> <repo-slug> <branch-name>",
+		Use:   "delete [workspace] <repo-slug> <branch-name>",
 		Short: "Delete a branch",
-		Args:  cobra.ExactArgs(3),
+		Args:  cobra.RangeArgs(2, 3),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, repoSlug, branchName, err := resolveWorkspaceRepoAndID(cmd, args)
+			if err != nil {
+				return err
+			}
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
 			}
-			if err := client.DeleteBranch(args[0], args[1], args[2]); err != nil {
+			if err := client.DeleteBranch(workspace, repoSlug, branchName); err != nil {
 				return err
 			}
-			fmt.Printf("Deleted branch: %s\n", args[2])
+			fmt.Printf("Deleted branch: %s\n", branchName)
 			return nil
 		},
 	})
 
 	// tag list
 	tagListCmd := &cobra.Command{
-		Use:     "list <workspace> <repo-slug>",
+		Use:     "list [workspace] <repo-slug>",
 		Short:   "List tags",
 		Aliases: []string{"ls"},
-		Args:    cobra.ExactArgs(2),
+		Args:    cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, repoSlug, err := resolveWorkspaceAndRepo(cmd, args)
+			if err != nil {
+				return err
+			}
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
 			}
 
 			q, _ := cmd.Flags().GetString("query")
-			tags, err := client.ListTags(args[0], args[1], q)
+			tags, err := client.ListTags(workspace, repoSlug, q)
 			if err != nil {
 				return err
 			}
@@ -174,16 +194,20 @@ func init() {
 
 	// tag get
 	bbTagCmd.AddCommand(&cobra.Command{
-		Use:   "get <workspace> <repo-slug> <tag-name>",
+		Use:   "get [workspace] <repo-slug> <tag-name>",
 		Short: "Get tag details",
-		Args:  cobra.ExactArgs(3),
+		Args:  cobra.RangeArgs(2, 3),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, repoSlug, tagName, err := resolveWorkspaceRepoAndID(cmd, args)
+			if err != nil {
+				return err
+			}
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
 			}
 
-			tag, err := client.GetTag(args[0], args[1], args[2])
+			tag, err := client.GetTag(workspace, repoSlug, tagName)
 			if err != nil {
 				return err
 			}
@@ -200,10 +224,14 @@ func init() {
 
 	// tag create
 	tagCreateCmd := &cobra.Command{
-		Use:   "create <workspace> <repo-slug>",
+		Use:   "create [workspace] <repo-slug>",
 		Short: "Create a tag",
-		Args:  cobra.ExactArgs(2),
+		Args:  cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, repoSlug, err := resolveWorkspaceAndRepo(cmd, args)
+			if err != nil {
+				return err
+			}
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
@@ -222,7 +250,7 @@ func init() {
 			}
 			req.Target.Hash = target
 
-			tag, err := client.CreateTag(args[0], args[1], req)
+			tag, err := client.CreateTag(workspace, repoSlug, req)
 			if err != nil {
 				return err
 			}
@@ -237,18 +265,22 @@ func init() {
 
 	// tag delete
 	bbTagCmd.AddCommand(&cobra.Command{
-		Use:   "delete <workspace> <repo-slug> <tag-name>",
+		Use:   "delete [workspace] <repo-slug> <tag-name>",
 		Short: "Delete a tag",
-		Args:  cobra.ExactArgs(3),
+		Args:  cobra.RangeArgs(2, 3),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, repoSlug, tagName, err := resolveWorkspaceRepoAndID(cmd, args)
+			if err != nil {
+				return err
+			}
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
 			}
-			if err := client.DeleteTag(args[0], args[1], args[2]); err != nil {
+			if err := client.DeleteTag(workspace, repoSlug, tagName); err != nil {
 				return err
 			}
-			fmt.Printf("Deleted tag: %s\n", args[2])
+			fmt.Printf("Deleted tag: %s\n", tagName)
 			return nil
 		},
 	})

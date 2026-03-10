@@ -37,6 +37,63 @@ func getBitbucketClient(cmd *cobra.Command) (*bitbucket.Client, error) {
 	return bitbucket.NewClient(profile)
 }
 
+// defaultProject returns the flag value if set, otherwise falls back to the profile default.
+func defaultProject(cmd *cobra.Command) (string, error) {
+	project, _ := cmd.Flags().GetString("project")
+	if project != "" {
+		return project, nil
+	}
+	profile, err := getProfile(cmd)
+	if err != nil {
+		return "", err
+	}
+	return profile.Defaults.Project, nil
+}
+
+// defaultWorkspace returns the arg if provided, otherwise falls back to the profile default.
+// Returns the workspace and an error if no workspace could be resolved.
+func defaultWorkspace(cmd *cobra.Command, args []string, argIndex int) (string, error) {
+	if argIndex < len(args) {
+		return args[argIndex], nil
+	}
+	profile, err := getProfile(cmd)
+	if err != nil {
+		return "", err
+	}
+	if profile.Defaults.Workspace != "" {
+		return profile.Defaults.Workspace, nil
+	}
+	return "", fmt.Errorf("workspace is required: provide it as an argument or set a default with 'acli config set-defaults'")
+}
+
+// resolveWorkspaceAndRepo handles the common pattern of [workspace] <repo> args.
+// With 2 args: workspace=args[0], repo=args[1].
+// With 1 arg: workspace from profile default, repo=args[0].
+func resolveWorkspaceAndRepo(cmd *cobra.Command, args []string) (string, string, error) {
+	if len(args) >= 2 {
+		return args[0], args[1], nil
+	}
+	workspace, err := defaultWorkspace(cmd, nil, 0)
+	if err != nil {
+		return "", "", err
+	}
+	return workspace, args[0], nil
+}
+
+// resolveWorkspaceRepoAndID handles the pattern of [workspace] <repo> <id> args.
+// With 3 args: workspace=args[0], repo=args[1], id=args[2].
+// With 2 args: workspace from profile default, repo=args[0], id=args[1].
+func resolveWorkspaceRepoAndID(cmd *cobra.Command, args []string) (string, string, string, error) {
+	if len(args) >= 3 {
+		return args[0], args[1], args[2], nil
+	}
+	workspace, err := defaultWorkspace(cmd, nil, 0)
+	if err != nil {
+		return "", "", "", err
+	}
+	return workspace, args[0], args[1], nil
+}
+
 func newTabWriter() *tabwriter.Writer {
 	return tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 }

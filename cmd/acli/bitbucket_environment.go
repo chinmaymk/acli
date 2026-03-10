@@ -19,17 +19,21 @@ var bbEnvironmentCmd = &cobra.Command{
 func init() {
 	// environment list
 	bbEnvironmentCmd.AddCommand(&cobra.Command{
-		Use:     "list <workspace> <repo-slug>",
+		Use:     "list [workspace] <repo-slug>",
 		Short:   "List deployment environments",
 		Aliases: []string{"ls"},
-		Args:    cobra.ExactArgs(2),
+		Args:    cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, repoSlug, err := resolveWorkspaceAndRepo(cmd, args)
+			if err != nil {
+				return err
+			}
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
 			}
 
-			envs, err := client.ListEnvironments(args[0], args[1])
+			envs, err := client.ListEnvironments(workspace, repoSlug)
 			if err != nil {
 				return err
 			}
@@ -46,16 +50,20 @@ func init() {
 
 	// environment get
 	bbEnvironmentCmd.AddCommand(&cobra.Command{
-		Use:   "get <workspace> <repo-slug> <environment-uuid>",
+		Use:   "get [workspace] <repo-slug> <environment-uuid>",
 		Short: "Get environment details",
-		Args:  cobra.ExactArgs(3),
+		Args:  cobra.RangeArgs(2, 3),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, repoSlug, envUUID, err := resolveWorkspaceRepoAndID(cmd, args)
+			if err != nil {
+				return err
+			}
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
 			}
 
-			env, err := client.GetEnvironment(args[0], args[1], args[2])
+			env, err := client.GetEnvironment(workspace, repoSlug, envUUID)
 			if err != nil {
 				return err
 			}
@@ -70,10 +78,14 @@ func init() {
 
 	// environment create
 	envCreateCmd := &cobra.Command{
-		Use:   "create <workspace> <repo-slug>",
+		Use:   "create [workspace] <repo-slug>",
 		Short: "Create a deployment environment",
-		Args:  cobra.ExactArgs(2),
+		Args:  cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, repoSlug, err := resolveWorkspaceAndRepo(cmd, args)
+			if err != nil {
+				return err
+			}
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
@@ -104,7 +116,7 @@ func init() {
 			req.EnvironmentType.Name = envType
 			req.EnvironmentType.Rank = rank
 
-			env, err := client.CreateEnvironment(args[0], args[1], req)
+			env, err := client.CreateEnvironment(workspace, repoSlug, req)
 			if err != nil {
 				return err
 			}
@@ -119,18 +131,22 @@ func init() {
 
 	// environment delete
 	bbEnvironmentCmd.AddCommand(&cobra.Command{
-		Use:   "delete <workspace> <repo-slug> <environment-uuid>",
+		Use:   "delete [workspace] <repo-slug> <environment-uuid>",
 		Short: "Delete a deployment environment",
-		Args:  cobra.ExactArgs(3),
+		Args:  cobra.RangeArgs(2, 3),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, repoSlug, envUUID, err := resolveWorkspaceRepoAndID(cmd, args)
+			if err != nil {
+				return err
+			}
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
 			}
-			if err := client.DeleteEnvironment(args[0], args[1], args[2]); err != nil {
+			if err := client.DeleteEnvironment(workspace, repoSlug, envUUID); err != nil {
 				return err
 			}
-			fmt.Printf("Deleted environment: %s\n", args[2])
+			fmt.Printf("Deleted environment: %s\n", envUUID)
 			return nil
 		},
 	})

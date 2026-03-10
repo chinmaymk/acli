@@ -20,11 +20,15 @@ var bbIssueCmd = &cobra.Command{
 func init() {
 	// issue list
 	issueListCmd := &cobra.Command{
-		Use:     "list <workspace> <repo-slug>",
+		Use:     "list [workspace] <repo-slug>",
 		Short:   "List issues",
 		Aliases: []string{"ls"},
-		Args:    cobra.ExactArgs(2),
+		Args:    cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, repoSlug, err := resolveWorkspaceAndRepo(cmd, args)
+			if err != nil {
+				return err
+			}
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
@@ -33,7 +37,7 @@ func init() {
 			q, _ := cmd.Flags().GetString("query")
 			sort, _ := cmd.Flags().GetString("sort")
 
-			issues, err := client.ListIssues(args[0], args[1], &bitbucket.ListIssuesOptions{
+			issues, err := client.ListIssues(workspace, repoSlug, &bitbucket.ListIssuesOptions{
 				Q:    q,
 				Sort: sort,
 			})
@@ -60,21 +64,26 @@ func init() {
 
 	// issue get
 	bbIssueCmd.AddCommand(&cobra.Command{
-		Use:   "get <workspace> <repo-slug> <issue-id>",
+		Use:   "get [workspace] <repo-slug> <issue-id>",
 		Short: "Get issue details",
-		Args:  cobra.ExactArgs(3),
+		Args:  cobra.RangeArgs(2, 3),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, repoSlug, idStr, err := resolveWorkspaceRepoAndID(cmd, args)
+			if err != nil {
+				return err
+			}
+
+			issueID, err := strconv.Atoi(idStr)
+			if err != nil {
+				return fmt.Errorf("invalid issue ID: %s", idStr)
+			}
+
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
 			}
 
-			issueID, err := strconv.Atoi(args[2])
-			if err != nil {
-				return fmt.Errorf("invalid issue ID: %s", args[2])
-			}
-
-			issue, err := client.GetIssue(args[0], args[1], issueID)
+			issue, err := client.GetIssue(workspace, repoSlug, issueID)
 			if err != nil {
 				return err
 			}
@@ -107,10 +116,14 @@ func init() {
 
 	// issue create
 	issueCreateCmd := &cobra.Command{
-		Use:   "create <workspace> <repo-slug>",
+		Use:   "create [workspace] <repo-slug>",
 		Short: "Create an issue",
-		Args:  cobra.ExactArgs(2),
+		Args:  cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, repoSlug, err := resolveWorkspaceAndRepo(cmd, args)
+			if err != nil {
+				return err
+			}
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
@@ -136,7 +149,7 @@ func init() {
 				}{Raw: content}
 			}
 
-			issue, err := client.CreateIssue(args[0], args[1], req)
+			issue, err := client.CreateIssue(workspace, repoSlug, req)
 			if err != nil {
 				return err
 			}
@@ -154,18 +167,23 @@ func init() {
 
 	// issue update
 	issueUpdateCmd := &cobra.Command{
-		Use:   "update <workspace> <repo-slug> <issue-id>",
+		Use:   "update [workspace] <repo-slug> <issue-id>",
 		Short: "Update an issue",
-		Args:  cobra.ExactArgs(3),
+		Args:  cobra.RangeArgs(2, 3),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			client, err := getBitbucketClient(cmd)
+			workspace, repoSlug, idStr, err := resolveWorkspaceRepoAndID(cmd, args)
 			if err != nil {
 				return err
 			}
 
-			issueID, err := strconv.Atoi(args[2])
+			issueID, err := strconv.Atoi(idStr)
 			if err != nil {
-				return fmt.Errorf("invalid issue ID: %s", args[2])
+				return fmt.Errorf("invalid issue ID: %s", idStr)
+			}
+
+			client, err := getBitbucketClient(cmd)
+			if err != nil {
+				return err
 			}
 
 			title, _ := cmd.Flags().GetString("title")
@@ -180,7 +198,7 @@ func init() {
 				Priority: priority,
 			}
 
-			issue, err := client.UpdateIssue(args[0], args[1], issueID, req)
+			issue, err := client.UpdateIssue(workspace, repoSlug, issueID, req)
 			if err != nil {
 				return err
 			}
@@ -197,19 +215,23 @@ func init() {
 
 	// issue delete
 	bbIssueCmd.AddCommand(&cobra.Command{
-		Use:   "delete <workspace> <repo-slug> <issue-id>",
+		Use:   "delete [workspace] <repo-slug> <issue-id>",
 		Short: "Delete an issue",
-		Args:  cobra.ExactArgs(3),
+		Args:  cobra.RangeArgs(2, 3),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, repoSlug, idStr, err := resolveWorkspaceRepoAndID(cmd, args)
+			if err != nil {
+				return err
+			}
+			issueID, err := strconv.Atoi(idStr)
+			if err != nil {
+				return fmt.Errorf("invalid issue ID: %s", idStr)
+			}
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
 			}
-			issueID, err := strconv.Atoi(args[2])
-			if err != nil {
-				return fmt.Errorf("invalid issue ID: %s", args[2])
-			}
-			if err := client.DeleteIssue(args[0], args[1], issueID); err != nil {
+			if err := client.DeleteIssue(workspace, repoSlug, issueID); err != nil {
 				return err
 			}
 			fmt.Printf("Deleted issue #%d\n", issueID)
@@ -219,20 +241,24 @@ func init() {
 
 	// issue comments
 	bbIssueCmd.AddCommand(&cobra.Command{
-		Use:   "comments <workspace> <repo-slug> <issue-id>",
+		Use:   "comments [workspace] <repo-slug> <issue-id>",
 		Short: "List comments on an issue",
-		Args:  cobra.ExactArgs(3),
+		Args:  cobra.RangeArgs(2, 3),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, repoSlug, idStr, err := resolveWorkspaceRepoAndID(cmd, args)
+			if err != nil {
+				return err
+			}
+			issueID, err := strconv.Atoi(idStr)
+			if err != nil {
+				return fmt.Errorf("invalid issue ID: %s", idStr)
+			}
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
 			}
-			issueID, err := strconv.Atoi(args[2])
-			if err != nil {
-				return fmt.Errorf("invalid issue ID: %s", args[2])
-			}
 
-			comments, err := client.ListIssueComments(args[0], args[1], issueID)
+			comments, err := client.ListIssueComments(workspace, repoSlug, issueID)
 			if err != nil {
 				return err
 			}
@@ -247,17 +273,21 @@ func init() {
 
 	// issue comment (add)
 	issueCommentCmd := &cobra.Command{
-		Use:   "comment <workspace> <repo-slug> <issue-id>",
+		Use:   "comment [workspace] <repo-slug> <issue-id>",
 		Short: "Add a comment to an issue",
-		Args:  cobra.ExactArgs(3),
+		Args:  cobra.RangeArgs(2, 3),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			client, err := getBitbucketClient(cmd)
+			workspace, repoSlug, idStr, err := resolveWorkspaceRepoAndID(cmd, args)
 			if err != nil {
 				return err
 			}
-			issueID, err := strconv.Atoi(args[2])
+			issueID, err := strconv.Atoi(idStr)
 			if err != nil {
-				return fmt.Errorf("invalid issue ID: %s", args[2])
+				return fmt.Errorf("invalid issue ID: %s", idStr)
+			}
+			client, err := getBitbucketClient(cmd)
+			if err != nil {
+				return err
 			}
 
 			body, _ := cmd.Flags().GetString("body")
@@ -265,7 +295,7 @@ func init() {
 				return fmt.Errorf("--body is required")
 			}
 
-			comment, err := client.CreateIssueComment(args[0], args[1], issueID, body)
+			comment, err := client.CreateIssueComment(workspace, repoSlug, issueID, body)
 			if err != nil {
 				return err
 			}

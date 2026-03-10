@@ -20,17 +20,21 @@ var bbDeployKeyCmd = &cobra.Command{
 func init() {
 	// deploy-key list
 	bbDeployKeyCmd.AddCommand(&cobra.Command{
-		Use:     "list <workspace> <repo-slug>",
+		Use:     "list [workspace] <repo-slug>",
 		Short:   "List deploy keys",
 		Aliases: []string{"ls"},
-		Args:    cobra.ExactArgs(2),
+		Args:    cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, repoSlug, err := resolveWorkspaceAndRepo(cmd, args)
+			if err != nil {
+				return err
+			}
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
 			}
 
-			keys, err := client.ListDeployKeys(args[0], args[1])
+			keys, err := client.ListDeployKeys(workspace, repoSlug)
 			if err != nil {
 				return err
 			}
@@ -47,21 +51,26 @@ func init() {
 
 	// deploy-key get
 	bbDeployKeyCmd.AddCommand(&cobra.Command{
-		Use:   "get <workspace> <repo-slug> <key-id>",
+		Use:   "get [workspace] <repo-slug> <key-id>",
 		Short: "Get deploy key details",
-		Args:  cobra.ExactArgs(3),
+		Args:  cobra.RangeArgs(2, 3),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, repoSlug, idStr, err := resolveWorkspaceRepoAndID(cmd, args)
+			if err != nil {
+				return err
+			}
+
+			keyID, err := strconv.Atoi(idStr)
+			if err != nil {
+				return fmt.Errorf("invalid key ID: %s", idStr)
+			}
+
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
 			}
 
-			keyID, err := strconv.Atoi(args[2])
-			if err != nil {
-				return fmt.Errorf("invalid key ID: %s", args[2])
-			}
-
-			key, err := client.GetDeployKey(args[0], args[1], keyID)
+			key, err := client.GetDeployKey(workspace, repoSlug, keyID)
 			if err != nil {
 				return err
 			}
@@ -77,10 +86,14 @@ func init() {
 
 	// deploy-key create
 	dkCreateCmd := &cobra.Command{
-		Use:   "create <workspace> <repo-slug>",
+		Use:   "create [workspace] <repo-slug>",
 		Short: "Add a deploy key to a repository",
-		Args:  cobra.ExactArgs(2),
+		Args:  cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, repoSlug, err := resolveWorkspaceAndRepo(cmd, args)
+			if err != nil {
+				return err
+			}
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
@@ -93,7 +106,7 @@ func init() {
 				return fmt.Errorf("--key and --label are required")
 			}
 
-			key, err := client.CreateDeployKey(args[0], args[1], &bitbucket.CreateDeployKeyRequest{
+			key, err := client.CreateDeployKey(workspace, repoSlug, &bitbucket.CreateDeployKeyRequest{
 				Key:   keyContent,
 				Label: label,
 			})
@@ -111,22 +124,26 @@ func init() {
 
 	// deploy-key delete
 	bbDeployKeyCmd.AddCommand(&cobra.Command{
-		Use:   "delete <workspace> <repo-slug> <key-id>",
+		Use:   "delete [workspace] <repo-slug> <key-id>",
 		Short: "Delete a deploy key",
-		Args:  cobra.ExactArgs(3),
+		Args:  cobra.RangeArgs(2, 3),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, repoSlug, idStr, err := resolveWorkspaceRepoAndID(cmd, args)
+			if err != nil {
+				return err
+			}
+			keyID, err := strconv.Atoi(idStr)
+			if err != nil {
+				return fmt.Errorf("invalid key ID: %s", idStr)
+			}
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
 			}
-			keyID, err := strconv.Atoi(args[2])
-			if err != nil {
-				return fmt.Errorf("invalid key ID: %s", args[2])
-			}
-			if err := client.DeleteDeployKey(args[0], args[1], keyID); err != nil {
+			if err := client.DeleteDeployKey(workspace, repoSlug, keyID); err != nil {
 				return err
 			}
-			fmt.Printf("Deleted deploy key: %s\n", args[2])
+			fmt.Printf("Deleted deploy key: %s\n", idStr)
 			return nil
 		},
 	})

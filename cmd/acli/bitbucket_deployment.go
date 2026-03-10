@@ -18,17 +18,21 @@ var bbDeploymentCmd = &cobra.Command{
 func init() {
 	// deployment list
 	bbDeploymentCmd.AddCommand(&cobra.Command{
-		Use:     "list <workspace> <repo-slug>",
+		Use:     "list [workspace] <repo-slug>",
 		Short:   "List deployments",
 		Aliases: []string{"ls"},
-		Args:    cobra.ExactArgs(2),
+		Args:    cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, repoSlug, err := resolveWorkspaceAndRepo(cmd, args)
+			if err != nil {
+				return err
+			}
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
 			}
 
-			deployments, err := client.ListDeployments(args[0], args[1])
+			deployments, err := client.ListDeployments(workspace, repoSlug)
 			if err != nil {
 				return err
 			}
@@ -50,16 +54,20 @@ func init() {
 
 	// deployment get
 	bbDeploymentCmd.AddCommand(&cobra.Command{
-		Use:   "get <workspace> <repo-slug> <deployment-uuid>",
+		Use:   "get [workspace] <repo-slug> <deployment-uuid>",
 		Short: "Get deployment details",
-		Args:  cobra.ExactArgs(3),
+		Args:  cobra.RangeArgs(2, 3),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, repoSlug, deployUUID, err := resolveWorkspaceRepoAndID(cmd, args)
+			if err != nil {
+				return err
+			}
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
 			}
 
-			d, err := client.GetDeployment(args[0], args[1], args[2])
+			d, err := client.GetDeployment(workspace, repoSlug, deployUUID)
 			if err != nil {
 				return err
 			}

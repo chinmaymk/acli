@@ -57,7 +57,7 @@ var jiraComponentCreateCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		project, _ := cmd.Flags().GetString("project")
+		project, _ := defaultProject(cmd)
 		name, _ := cmd.Flags().GetString("name")
 		body := map[string]interface{}{
 			"project": project,
@@ -914,12 +914,11 @@ func init() {
 
 	jiraComponentGetCmd.Flags().Bool("json", false, "Output as JSON")
 
-	jiraComponentCreateCmd.Flags().String("project", "", "Project key (required)")
+	jiraComponentCreateCmd.Flags().String("project", "", "Project key (uses profile default if not set)")
 	jiraComponentCreateCmd.Flags().String("name", "", "Component name (required)")
 	jiraComponentCreateCmd.Flags().String("description", "", "Component description")
 	jiraComponentCreateCmd.Flags().String("lead", "", "Lead account ID")
 	jiraComponentCreateCmd.Flags().String("assignee-type", "", "Assignee type")
-	_ = jiraComponentCreateCmd.MarkFlagRequired("project")
 	_ = jiraComponentCreateCmd.MarkFlagRequired("name")
 
 	jiraComponentUpdateCmd.Flags().String("name", "", "Component name")

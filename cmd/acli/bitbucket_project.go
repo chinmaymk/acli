@@ -19,17 +19,21 @@ var bbProjectCmd = &cobra.Command{
 func init() {
 	// project list
 	bbProjectCmd.AddCommand(&cobra.Command{
-		Use:     "list <workspace>",
+		Use:     "list [workspace]",
 		Short:   "List projects in a workspace",
 		Aliases: []string{"ls"},
-		Args:    cobra.ExactArgs(1),
+		Args:    cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, err := defaultWorkspace(cmd, args, 0)
+			if err != nil {
+				return err
+			}
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
 			}
 
-			projects, err := client.ListProjects(args[0])
+			projects, err := client.ListProjects(workspace)
 			if err != nil {
 				return err
 			}
@@ -46,16 +50,28 @@ func init() {
 
 	// project get
 	bbProjectCmd.AddCommand(&cobra.Command{
-		Use:   "get <workspace> <project-key>",
+		Use:   "get [workspace] <project-key>",
 		Short: "Get project details",
-		Args:  cobra.ExactArgs(2),
+		Args:  cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			var workspace, projectKey string
+			if len(args) >= 2 {
+				workspace = args[0]
+				projectKey = args[1]
+			} else {
+				var err error
+				workspace, err = defaultWorkspace(cmd, nil, 0)
+				if err != nil {
+					return err
+				}
+				projectKey = args[0]
+			}
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
 			}
 
-			project, err := client.GetProject(args[0], args[1])
+			project, err := client.GetProject(workspace, projectKey)
 			if err != nil {
 				return err
 			}
@@ -73,10 +89,14 @@ func init() {
 
 	// project create
 	projectCreateCmd := &cobra.Command{
-		Use:   "create <workspace>",
+		Use:   "create [workspace]",
 		Short: "Create a project",
-		Args:  cobra.ExactArgs(1),
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, err := defaultWorkspace(cmd, args, 0)
+			if err != nil {
+				return err
+			}
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
@@ -91,7 +111,7 @@ func init() {
 				return fmt.Errorf("--name and --key are required")
 			}
 
-			project, err := client.CreateProject(args[0], &bitbucket.CreateProjectRequest{
+			project, err := client.CreateProject(workspace, &bitbucket.CreateProjectRequest{
 				Name:        name,
 				Key:         key,
 				Description: desc,
@@ -114,18 +134,30 @@ func init() {
 
 	// project delete
 	bbProjectCmd.AddCommand(&cobra.Command{
-		Use:   "delete <workspace> <project-key>",
+		Use:   "delete [workspace] <project-key>",
 		Short: "Delete a project",
-		Args:  cobra.ExactArgs(2),
+		Args:  cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			var workspace, projectKey string
+			if len(args) >= 2 {
+				workspace = args[0]
+				projectKey = args[1]
+			} else {
+				var err error
+				workspace, err = defaultWorkspace(cmd, nil, 0)
+				if err != nil {
+					return err
+				}
+				projectKey = args[0]
+			}
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
 			}
-			if err := client.DeleteProject(args[0], args[1]); err != nil {
+			if err := client.DeleteProject(workspace, projectKey); err != nil {
 				return err
 			}
-			fmt.Printf("Deleted project: %s\n", args[1])
+			fmt.Printf("Deleted project: %s\n", projectKey)
 			return nil
 		},
 	})

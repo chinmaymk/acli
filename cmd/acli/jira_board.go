@@ -25,7 +25,7 @@ var jiraBoardListCmd = &cobra.Command{
 		}
 		startAt, _ := cmd.Flags().GetInt("start-at")
 		maxResults, _ := cmd.Flags().GetInt("max-results")
-		project, _ := cmd.Flags().GetString("project")
+		project, _ := defaultProject(cmd)
 		boardType, _ := cmd.Flags().GetString("type")
 		name, _ := cmd.Flags().GetString("name")
 		jsonFlag, _ := cmd.Flags().GetBool("json")
@@ -241,7 +241,7 @@ var jiraBoardEpicsCmd = &cobra.Command{
 
 func init() {
 	// board list
-	jiraBoardListCmd.Flags().String("project", "", "Filter by project key or ID")
+	jiraBoardListCmd.Flags().String("project", "", "Filter by project key or ID (uses profile default if not set)")
 	jiraBoardListCmd.Flags().String("type", "", "Filter by board type (scrum, kanban)")
 	jiraBoardListCmd.Flags().String("name", "", "Filter by board name")
 	jiraBoardListCmd.Flags().Int("start-at", 0, "Start index")

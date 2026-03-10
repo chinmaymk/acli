@@ -44,16 +44,20 @@ func init() {
 
 	// workspace get
 	bbWorkspaceCmd.AddCommand(&cobra.Command{
-		Use:   "get <workspace>",
+		Use:   "get [workspace]",
 		Short: "Get workspace details",
-		Args:  cobra.ExactArgs(1),
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, err := defaultWorkspace(cmd, args, 0)
+			if err != nil {
+				return err
+			}
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
 			}
 
-			ws, err := client.GetWorkspace(args[0])
+			ws, err := client.GetWorkspace(workspace)
 			if err != nil {
 				return err
 			}
@@ -70,16 +74,20 @@ func init() {
 
 	// workspace members
 	bbWorkspaceCmd.AddCommand(&cobra.Command{
-		Use:   "members <workspace>",
+		Use:   "members [workspace]",
 		Short: "List workspace members",
-		Args:  cobra.ExactArgs(1),
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, err := defaultWorkspace(cmd, args, 0)
+			if err != nil {
+				return err
+			}
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
 			}
 
-			members, err := client.ListWorkspaceMembers(args[0])
+			members, err := client.ListWorkspaceMembers(workspace)
 			if err != nil {
 				return err
 			}
@@ -96,16 +104,20 @@ func init() {
 
 	// workspace permissions
 	bbWorkspaceCmd.AddCommand(&cobra.Command{
-		Use:   "permissions <workspace>",
+		Use:   "permissions [workspace]",
 		Short: "List user permissions in workspace",
-		Args:  cobra.ExactArgs(1),
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, err := defaultWorkspace(cmd, args, 0)
+			if err != nil {
+				return err
+			}
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
 			}
 
-			perms, err := client.ListWorkspacePermissions(args[0])
+			perms, err := client.ListWorkspacePermissions(workspace)
 			if err != nil {
 				return err
 			}

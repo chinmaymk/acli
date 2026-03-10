@@ -19,18 +19,22 @@ var bbPipelineCmd = &cobra.Command{
 func init() {
 	// pipeline list
 	pipelineListCmd := &cobra.Command{
-		Use:     "list <workspace> <repo-slug>",
+		Use:     "list [workspace] <repo-slug>",
 		Short:   "List pipelines",
 		Aliases: []string{"ls"},
-		Args:    cobra.ExactArgs(2),
+		Args:    cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, repoSlug, err := resolveWorkspaceAndRepo(cmd, args)
+			if err != nil {
+				return err
+			}
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
 			}
 
 			status, _ := cmd.Flags().GetString("status")
-			pipelines, err := client.ListPipelines(args[0], args[1], &bitbucket.ListPipelinesOptions{
+			pipelines, err := client.ListPipelines(workspace, repoSlug, &bitbucket.ListPipelinesOptions{
 				Status: status,
 			})
 			if err != nil {
@@ -59,16 +63,20 @@ func init() {
 
 	// pipeline get
 	bbPipelineCmd.AddCommand(&cobra.Command{
-		Use:   "get <workspace> <repo-slug> <pipeline-uuid>",
+		Use:   "get [workspace] <repo-slug> <pipeline-uuid>",
 		Short: "Get pipeline details",
-		Args:  cobra.ExactArgs(3),
+		Args:  cobra.RangeArgs(2, 3),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, repoSlug, pipelineUUID, err := resolveWorkspaceRepoAndID(cmd, args)
+			if err != nil {
+				return err
+			}
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
 			}
 
-			pipeline, err := client.GetPipeline(args[0], args[1], args[2])
+			pipeline, err := client.GetPipeline(workspace, repoSlug, pipelineUUID)
 			if err != nil {
 				return err
 			}
@@ -98,10 +106,14 @@ func init() {
 
 	// pipeline run
 	pipelineRunCmd := &cobra.Command{
-		Use:   "run <workspace> <repo-slug>",
+		Use:   "run [workspace] <repo-slug>",
 		Short: "Run a pipeline",
-		Args:  cobra.ExactArgs(2),
+		Args:  cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, repoSlug, err := resolveWorkspaceAndRepo(cmd, args)
+			if err != nil {
+				return err
+			}
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
@@ -121,7 +133,7 @@ func init() {
 				req = bitbucket.NewBranchPipelineRequest(branch)
 			}
 
-			pipeline, err := client.RunPipeline(args[0], args[1], req)
+			pipeline, err := client.RunPipeline(workspace, repoSlug, req)
 			if err != nil {
 				return err
 			}
@@ -137,34 +149,42 @@ func init() {
 
 	// pipeline stop
 	bbPipelineCmd.AddCommand(&cobra.Command{
-		Use:   "stop <workspace> <repo-slug> <pipeline-uuid>",
+		Use:   "stop [workspace] <repo-slug> <pipeline-uuid>",
 		Short: "Stop a running pipeline",
-		Args:  cobra.ExactArgs(3),
+		Args:  cobra.RangeArgs(2, 3),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, repoSlug, pipelineUUID, err := resolveWorkspaceRepoAndID(cmd, args)
+			if err != nil {
+				return err
+			}
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
 			}
-			if err := client.StopPipeline(args[0], args[1], args[2]); err != nil {
+			if err := client.StopPipeline(workspace, repoSlug, pipelineUUID); err != nil {
 				return err
 			}
-			fmt.Printf("Stopped pipeline %s\n", args[2])
+			fmt.Printf("Stopped pipeline %s\n", pipelineUUID)
 			return nil
 		},
 	})
 
 	// pipeline steps
 	bbPipelineCmd.AddCommand(&cobra.Command{
-		Use:   "steps <workspace> <repo-slug> <pipeline-uuid>",
+		Use:   "steps [workspace] <repo-slug> <pipeline-uuid>",
 		Short: "List steps for a pipeline",
-		Args:  cobra.ExactArgs(3),
+		Args:  cobra.RangeArgs(2, 3),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, repoSlug, pipelineUUID, err := resolveWorkspaceRepoAndID(cmd, args)
+			if err != nil {
+				return err
+			}
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
 			}
 
-			steps, err := client.ListPipelineSteps(args[0], args[1], args[2])
+			steps, err := client.ListPipelineSteps(workspace, repoSlug, pipelineUUID)
 			if err != nil {
 				return err
 			}
@@ -205,17 +225,21 @@ func init() {
 
 	// pipeline variables
 	bbPipelineCmd.AddCommand(&cobra.Command{
-		Use:   "variables <workspace> <repo-slug>",
-		Short: "List pipeline variables",
+		Use:     "variables [workspace] <repo-slug>",
+		Short:   "List pipeline variables",
 		Aliases: []string{"vars"},
-		Args:  cobra.ExactArgs(2),
+		Args:    cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, repoSlug, err := resolveWorkspaceAndRepo(cmd, args)
+			if err != nil {
+				return err
+			}
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
 			}
 
-			vars, err := client.ListPipelineVariables(args[0], args[1])
+			vars, err := client.ListPipelineVariables(workspace, repoSlug)
 			if err != nil {
 				return err
 			}
@@ -235,10 +259,14 @@ func init() {
 
 	// pipeline add-variable
 	addVarCmd := &cobra.Command{
-		Use:   "add-variable <workspace> <repo-slug>",
+		Use:   "add-variable [workspace] <repo-slug>",
 		Short: "Create a pipeline variable",
-		Args:  cobra.ExactArgs(2),
+		Args:  cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, repoSlug, err := resolveWorkspaceAndRepo(cmd, args)
+			if err != nil {
+				return err
+			}
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
@@ -252,7 +280,7 @@ func init() {
 				return fmt.Errorf("--key and --value are required")
 			}
 
-			v, err := client.CreatePipelineVariable(args[0], args[1], key, value, secured)
+			v, err := client.CreatePipelineVariable(workspace, repoSlug, key, value, secured)
 			if err != nil {
 				return err
 			}
@@ -267,18 +295,22 @@ func init() {
 
 	// pipeline delete-variable
 	bbPipelineCmd.AddCommand(&cobra.Command{
-		Use:   "delete-variable <workspace> <repo-slug> <variable-uuid>",
+		Use:   "delete-variable [workspace] <repo-slug> <variable-uuid>",
 		Short: "Delete a pipeline variable",
-		Args:  cobra.ExactArgs(3),
+		Args:  cobra.RangeArgs(2, 3),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, repoSlug, varUUID, err := resolveWorkspaceRepoAndID(cmd, args)
+			if err != nil {
+				return err
+			}
 			client, err := getBitbucketClient(cmd)
 			if err != nil {
 				return err
 			}
-			if err := client.DeletePipelineVariable(args[0], args[1], args[2]); err != nil {
+			if err := client.DeletePipelineVariable(workspace, repoSlug, varUUID); err != nil {
 				return err
 			}
-			fmt.Printf("Deleted variable %s\n", args[2])
+			fmt.Printf("Deleted variable %s\n", varUUID)
 			return nil
 		},
 	})
