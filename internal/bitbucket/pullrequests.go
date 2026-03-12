@@ -8,6 +8,20 @@ import (
 	"net/url"
 )
 
+type PRUser struct {
+	DisplayName string `json:"display_name"`
+	UUID        string `json:"uuid"`
+	AccountID   string `json:"account_id,omitempty"`
+	Nickname    string `json:"nickname,omitempty"`
+}
+
+type PRParticipant struct {
+	User     PRUser `json:"user"`
+	Role     string `json:"role"`
+	Approved bool   `json:"approved"`
+	State    string `json:"state"`
+}
+
 type PullRequest struct {
 	ID          int    `json:"id"`
 	Title       string `json:"title"`
@@ -35,9 +49,11 @@ type PullRequest struct {
 			FullName string `json:"full_name"`
 		} `json:"repository"`
 	} `json:"destination"`
-	CloseSourceBranch bool `json:"close_source_branch"`
-	CommentCount      int  `json:"comment_count"`
-	TaskCount         int  `json:"task_count"`
+	Reviewers         []PRUser        `json:"reviewers,omitempty"`
+	Participants      []PRParticipant `json:"participants,omitempty"`
+	CloseSourceBranch bool            `json:"close_source_branch"`
+	CommentCount      int             `json:"comment_count"`
+	TaskCount         int             `json:"task_count"`
 	Links             struct {
 		HTML struct {
 			Href string `json:"href"`
@@ -184,9 +200,88 @@ func (c *Client) CreatePullRequest(workspace, repoSlug string, req *CreatePRRequ
 }
 
 type UpdatePRRequest struct {
-	Title             string `json:"title,omitempty"`
-	Description       string `json:"description,omitempty"`
-	CloseSourceBranch *bool  `json:"close_source_branch,omitempty"`
+	Title             string   `json:"title,omitempty"`
+	Description       string   `json:"description,omitempty"`
+	CloseSourceBranch *bool    `json:"close_source_branch,omitempty"`
+	Reviewers         []PRUser `json:"reviewers,omitempty"`
+}
+
+// AddReviewersToPullRequest adds reviewers to an existing PR by merging with existing reviewers.
+func (c *Client) AddReviewersToPullRequest(workspace, repoSlug string, prID int, reviewerUUIDs []string) (*PullRequest, error) {
+	// Get current PR to preserve existing reviewers
+	pr, err := c.GetPullRequest(workspace, repoSlug, prID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Build set of existing reviewer UUIDs
+	existing := make(map[string]bool)
+	var reviewers []PRUser
+	for _, r := range pr.Reviewers {
+		existing[r.UUID] = true
+		reviewers = append(reviewers, r)
+	}
+
+	// Add new reviewers
+	for _, uuid := range reviewerUUIDs {
+		if !existing[uuid] {
+			reviewers = append(reviewers, PRUser{UUID: uuid})
+		}
+	}
+
+	return c.UpdatePullRequest(workspace, repoSlug, prID, &UpdatePRRequest{
+		Reviewers: reviewers,
+	})
+}
+
+// RemoveReviewersFromPullRequest removes specific reviewers from a PR.
+func (c *Client) RemoveReviewersFromPullRequest(workspace, repoSlug string, prID int, removeUUIDs []string) (*PullRequest, error) {
+	pr, err := c.GetPullRequest(workspace, repoSlug, prID)
+	if err != nil {
+		return nil, err
+	}
+
+	removeSet := make(map[string]bool)
+	for _, uuid := range removeUUIDs {
+		removeSet[uuid] = true
+	}
+
+	var reviewers []PRUser
+	for _, r := range pr.Reviewers {
+		if !removeSet[r.UUID] {
+			reviewers = append(reviewers, r)
+		}
+	}
+
+	return c.UpdatePullRequest(workspace, repoSlug, prID, &UpdatePRRequest{
+		Reviewers: reviewers,
+	})
+}
+
+// BBUser represents the current authenticated Bitbucket user.
+type BBUser struct {
+	DisplayName string `json:"display_name"`
+	UUID        string `json:"uuid"`
+	AccountID   string `json:"account_id"`
+	Nickname    string `json:"nickname"`
+	Links       struct {
+		HTML struct {
+			Href string `json:"href"`
+		} `json:"html"`
+	} `json:"links"`
+}
+
+// GetCurrentUser returns the authenticated user.
+func (c *Client) GetCurrentUser() (*BBUser, error) {
+	data, err := c.get("/user")
+	if err != nil {
+		return nil, err
+	}
+	var user BBUser
+	if err := json.Unmarshal(data, &user); err != nil {
+		return nil, fmt.Errorf("parsing user: %w", err)
+	}
+	return &user, nil
 }
 
 func (c *Client) UpdatePullRequest(workspace, repoSlug string, prID int, req *UpdatePRRequest) (*PullRequest, error) {

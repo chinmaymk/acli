@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/chinmaymk/acli/internal/bitbucket"
@@ -117,7 +118,10 @@ func init() {
 	prCreateCmd := &cobra.Command{
 		Use:   "create [workspace] <repo-slug>",
 		Short: "Create a pull request",
-		Args:  cobra.RangeArgs(1, 2),
+		Long: `Create a pull request. Use --from-issue to auto-populate the title and
+description from a Jira issue (e.g. --from-issue PROJ-123). The PR description
+will include a link back to the Jira ticket.`,
+		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			workspace, repoSlug, err := resolveWorkspaceAndRepo(cmd, args)
 			if err != nil {
@@ -133,9 +137,37 @@ func init() {
 			dest, _ := cmd.Flags().GetString("destination")
 			desc, _ := cmd.Flags().GetString("description")
 			closeBranch, _ := cmd.Flags().GetBool("close-source-branch")
+			fromIssue, _ := cmd.Flags().GetString("from-issue")
+
+			// If --from-issue is specified, fetch issue details and populate title/description
+			if fromIssue != "" {
+				jiraClient, err := getJiraClient(cmd)
+				if err != nil {
+					return fmt.Errorf("--from-issue requires a configured Jira profile: %w", err)
+				}
+				issue, err := jiraClient.GetIssue(fromIssue, []string{"summary", "description"}, nil)
+				if err != nil {
+					return fmt.Errorf("fetching Jira issue %s: %w", fromIssue, err)
+				}
+
+				if title == "" {
+					title = fmt.Sprintf("%s: %s", issue.Key, issue.Fields.Summary)
+				}
+				if desc == "" {
+					profile, _ := getProfile(cmd)
+					issueURL := fmt.Sprintf("%s/browse/%s",
+						strings.TrimRight(profile.AtlassianURL, "/"), issue.Key)
+					desc = fmt.Sprintf("Resolves [%s](%s)\n\n%s",
+						issue.Key, issueURL, issue.Fields.Summary)
+				}
+				if source == "" {
+					// Generate a branch name from the issue key
+					source = strings.ToLower(fmt.Sprintf("feature/%s", issue.Key))
+				}
+			}
 
 			if title == "" || source == "" {
-				return fmt.Errorf("--title and --source are required")
+				return fmt.Errorf("--title and --source are required (or use --from-issue to auto-populate)")
 			}
 
 			pr, err := client.CreatePullRequest(workspace, repoSlug, &bitbucket.CreatePRRequest{
@@ -152,11 +184,12 @@ func init() {
 			return outputResult(cmd, "created", fmt.Sprintf("%d", pr.ID), fmt.Sprintf("Created PR #%d: %s", pr.ID, pr.Title), pr)
 		},
 	}
-	prCreateCmd.Flags().String("title", "", "Pull request title (required)")
-	prCreateCmd.Flags().String("source", "", "Source branch name (required)")
+	prCreateCmd.Flags().String("title", "", "Pull request title (required, or use --from-issue)")
+	prCreateCmd.Flags().String("source", "", "Source branch name (required, or use --from-issue)")
 	prCreateCmd.Flags().String("destination", "", "Destination branch name (defaults to main branch)")
 	prCreateCmd.Flags().String("description", "", "Pull request description")
 	prCreateCmd.Flags().Bool("close-source-branch", false, "Close source branch after merge")
+	prCreateCmd.Flags().String("from-issue", "", "Jira issue key to populate title/description from (e.g. PROJ-123)")
 	bbPRCmd.AddCommand(prCreateCmd)
 
 	// pr approve
