@@ -34,9 +34,11 @@ func init() {
 			}
 
 			state, _ := cmd.Flags().GetString("state")
+			author, _ := cmd.Flags().GetString("author")
 			pOpts := getBBPaginationOpts(cmd)
 			prs, err := client.ListPullRequests(workspace, repoSlug, &bitbucket.ListPRsOptions{
 				State:   state,
+				Author:  author,
 				Page:    pOpts.Page,
 				PageLen: pOpts.PageLen,
 				All:     pOpts.All,
@@ -59,7 +61,8 @@ func init() {
 			return w.Flush()
 		},
 	}
-	prListCmd.Flags().String("state", "", "Filter by state (OPEN, MERGED, DECLINED, SUPERSEDED)")
+	prListCmd.Flags().String("state", "OPEN", "Filter by state (OPEN, MERGED, DECLINED, SUPERSEDED)")
+	prListCmd.Flags().String("author", "", "Filter by author Bitbucket username or UUID (e.g. 'jdoe' or '{d301aafa-d676-4ee0-88be-962be7417567}')")
 	addBBPaginationFlags(prListCmd)
 	bbPRCmd.AddCommand(prListCmd)
 

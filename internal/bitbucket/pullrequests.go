@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"strings"
 )
 
 type PullRequest struct {
@@ -47,6 +48,7 @@ type PullRequest struct {
 
 type ListPRsOptions struct {
 	State   string
+	Author  string // Bitbucket nickname (username) or UUID wrapped in braces, e.g. "{d301aafa-...}"
 	Page    int
 	PageLen int
 	All     bool
@@ -55,8 +57,20 @@ type ListPRsOptions struct {
 func (c *Client) ListPullRequests(workspace, repoSlug string, opts *ListPRsOptions) ([]PullRequest, error) {
 	params := url.Values{}
 	if opts != nil {
-		if opts.State != "" {
-			params.Set("state", opts.State)
+		state := strings.ToUpper(opts.State)
+		var qParts []string
+		if state != "" {
+			qParts = append(qParts, fmt.Sprintf(`state="%s"`, state))
+		}
+		if opts.Author != "" {
+			if len(opts.Author) > 2 && opts.Author[0] == '{' && opts.Author[len(opts.Author)-1] == '}' {
+				qParts = append(qParts, fmt.Sprintf(`author.uuid="%s"`, opts.Author))
+			} else {
+				qParts = append(qParts, fmt.Sprintf(`author.nickname="%s"`, opts.Author))
+			}
+		}
+		if len(qParts) > 0 {
+			params.Set("q", strings.Join(qParts, " AND "))
 		}
 		if opts.Page > 0 {
 			params.Set("page", fmt.Sprintf("%d", opts.Page))
