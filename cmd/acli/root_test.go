@@ -82,7 +82,15 @@ func TestBitbucketCommandAliases(t *testing.T) {
 }
 
 func TestJiraSubcommands(t *testing.T) {
+	// Core subcommands from jira.go
 	expected := []string{"issue", "project", "board", "sprint", "epic", "backlog", "search", "filter", "user", "group", "dashboard"}
+	// Additional subcommands from jira_admin.go
+	expected = append(expected, "role", "issuelink", "issuelinktype", "screen", "workflow", "workflowscheme",
+		"permissionscheme", "notificationscheme", "issuesecurityscheme", "fieldconfig", "issuetypescheme",
+		"serverinfo", "webhook", "attachment", "audit", "banner", "configuration", "permission", "task", "projectcategory")
+	// Additional subcommands from jira_resources.go
+	expected = append(expected, "component", "version", "field", "label", "issuetype", "priority", "resolution", "status")
+
 	subs := jiraCmd.Commands()
 	nameSet := make(map[string]bool)
 	for _, cmd := range subs {
@@ -110,7 +118,7 @@ func TestBitbucketSubcommands(t *testing.T) {
 }
 
 func TestConfluenceSubcommands(t *testing.T) {
-	expected := []string{"space", "page", "blogpost", "comment", "label", "attachment", "task", "custom-content", "whiteboard", "database", "folder", "smart-link", "property", "space-permission", "admin-key", "data-policy", "classification", "user", "space-role"}
+	expected := []string{"space", "page", "blogpost", "comment", "label", "attachment", "task", "custom-content", "whiteboard", "database", "folder", "smart-link", "property", "space-permission", "admin-key", "data-policy", "classification", "user", "space-role", "convert-ids", "app-property"}
 	subs := confluenceCmd.Commands()
 	nameSet := make(map[string]bool)
 	for _, cmd := range subs {
@@ -134,6 +142,92 @@ func TestConfigSubcommands(t *testing.T) {
 		if !nameSet[name] {
 			t.Errorf("expected config subcommand %q not found", name)
 		}
+	}
+}
+
+func TestConfluenceNestedCommentSubcommands(t *testing.T) {
+	// comment -> footer, inline
+	subs := confCommentCmd.Commands()
+	nameSet := make(map[string]bool)
+	for _, cmd := range subs {
+		nameSet[cmd.Name()] = true
+	}
+	for _, name := range []string{"footer", "inline"} {
+		if !nameSet[name] {
+			t.Errorf("expected comment subcommand %q not found", name)
+		}
+	}
+}
+
+func TestConfluenceResourceAliases(t *testing.T) {
+	tests := []struct {
+		name    string
+		aliases []string
+		actual  []string
+	}{
+		{"space", []string{"s"}, confSpaceCmd.Aliases},
+		{"page", []string{"p"}, confPageCmd.Aliases},
+		{"blogpost", []string{"blog", "bp"}, confBlogPostCmd.Aliases},
+		{"comment", []string{"cm"}, confCommentCmd.Aliases},
+		{"footer", []string{"fc"}, confFooterCommentCmd.Aliases},
+		{"inline", []string{"ic"}, confInlineCommentCmd.Aliases},
+		{"label", []string{"l"}, confLabelCmd.Aliases},
+		{"attachment", []string{"att", "a"}, confAttachmentCmd.Aliases},
+		{"task", []string{"t"}, confTaskCmd.Aliases},
+		{"custom-content", []string{"cc"}, confCustomContentCmd.Aliases},
+		{"whiteboard", []string{"wb"}, confWhiteboardCmd.Aliases},
+		{"database", []string{"db"}, confDatabaseCmd.Aliases},
+		{"folder", []string{"f"}, confFolderCmd.Aliases},
+		{"smart-link", []string{"sl", "embed"}, confSmartLinkCmd.Aliases},
+		{"property", []string{"prop"}, confPropertyCmd.Aliases},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			actualSet := make(map[string]bool)
+			for _, a := range tt.actual {
+				actualSet[a] = true
+			}
+			for _, expected := range tt.aliases {
+				if !actualSet[expected] {
+					t.Errorf("expected alias %q for %s not found", expected, tt.name)
+				}
+			}
+		})
+	}
+}
+
+func TestConfigCommandAliases(t *testing.T) {
+	found := false
+	for _, a := range configCmd.Aliases {
+		if a == "cfg" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected alias 'cfg' for config command")
+	}
+}
+
+func TestJiraSubcommandCount(t *testing.T) {
+	// Ensure we have a substantial number of jira subcommands (guards against accidental removal)
+	subs := jiraCmd.Commands()
+	if len(subs) < 30 {
+		t.Errorf("expected at least 30 jira subcommands, got %d", len(subs))
+	}
+}
+
+func TestBitbucketSubcommandCount(t *testing.T) {
+	subs := bitbucketCmd.Commands()
+	if len(subs) < 15 {
+		t.Errorf("expected at least 15 bitbucket subcommands, got %d", len(subs))
+	}
+}
+
+func TestConfluenceSubcommandCount(t *testing.T) {
+	subs := confluenceCmd.Commands()
+	if len(subs) < 19 {
+		t.Errorf("expected at least 19 confluence subcommands, got %d", len(subs))
 	}
 }
 
