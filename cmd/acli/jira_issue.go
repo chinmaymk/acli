@@ -417,6 +417,38 @@ var jiraIssueTransitionCmd = &cobra.Command{
 		}
 
 		transitionID, _ := cmd.Flags().GetString("id")
+		statusName, _ := cmd.Flags().GetString("status")
+
+		if transitionID == "" && statusName == "" {
+			return fmt.Errorf("either --id or --status must be specified")
+		}
+		if transitionID != "" && statusName != "" {
+			return fmt.Errorf("--id and --status are mutually exclusive")
+		}
+
+		if statusName != "" {
+			resp, err := client.GetIssueTransitions(args[0])
+			if err != nil {
+				return fmt.Errorf("failed to get transitions: %w", err)
+			}
+
+			statusLower := strings.ToLower(statusName)
+			for _, t := range resp.Transitions {
+				if t.To != nil && strings.ToLower(t.To.Name) == statusLower {
+					transitionID = t.ID
+					break
+				}
+			}
+			if transitionID == "" {
+				var available []string
+				for _, t := range resp.Transitions {
+					if t.To != nil {
+						available = append(available, t.To.Name)
+					}
+				}
+				return fmt.Errorf("no transition found to status %q; available statuses: %s", statusName, strings.Join(available, ", "))
+			}
+		}
 
 		details := &jira.IssueUpdateDetails{
 			Transition: &jira.IssueTransition{
@@ -1200,8 +1232,8 @@ func init() {
 	jiraIssueDeleteCmd.Flags().Bool("delete-subtasks", false, "Also delete subtasks")
 
 	// issue transition flags
-	jiraIssueTransitionCmd.Flags().String("id", "", "Transition ID (required)")
-	_ = jiraIssueTransitionCmd.MarkFlagRequired("id")
+	jiraIssueTransitionCmd.Flags().String("id", "", "Transition ID")
+	jiraIssueTransitionCmd.Flags().String("status", "", "Target status name (alternative to --id)")
 
 	// comment list flags
 	jiraIssueCommentListCmd.Flags().Int("max-results", 50, "Maximum number of results per page")
