@@ -409,6 +409,7 @@ var jiraIssueAssignCmd = &cobra.Command{
 var jiraIssueTransitionCmd = &cobra.Command{
 	Use:   "transition <issue-key>",
 	Short: "Transition an issue to a new status",
+	Long:  "Transition an issue to a new status. Provide either --id (transition ID) or --status (target status name).",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		client, err := getJiraClient(cmd)
@@ -417,6 +418,39 @@ var jiraIssueTransitionCmd = &cobra.Command{
 		}
 
 		transitionID, _ := cmd.Flags().GetString("id")
+		statusName, _ := cmd.Flags().GetString("status")
+
+		if transitionID == "" && statusName == "" {
+			return fmt.Errorf("either --id or --status must be provided")
+		}
+
+		if transitionID == "" {
+			// Look up the transition ID by matching the status name
+			resp, err := client.GetIssueTransitions(args[0])
+			if err != nil {
+				return fmt.Errorf("failed to get transitions: %w", err)
+			}
+
+			for _, t := range resp.Transitions {
+				if strings.EqualFold(t.Name, statusName) || (t.To != nil && strings.EqualFold(t.To.Name, statusName)) {
+					transitionID = t.ID
+					break
+				}
+			}
+
+			if transitionID == "" {
+				// Build a helpful error listing available transitions
+				var available []string
+				for _, t := range resp.Transitions {
+					name := t.Name
+					if t.To != nil && t.To.Name != t.Name {
+						name = fmt.Sprintf("%s (-> %s)", t.Name, t.To.Name)
+					}
+					available = append(available, name)
+				}
+				return fmt.Errorf("no transition found matching status %q; available transitions: %s", statusName, strings.Join(available, ", "))
+			}
+		}
 
 		details := &jira.IssueUpdateDetails{
 			Transition: &jira.IssueTransition{
@@ -1200,8 +1234,8 @@ func init() {
 	jiraIssueDeleteCmd.Flags().Bool("delete-subtasks", false, "Also delete subtasks")
 
 	// issue transition flags
-	jiraIssueTransitionCmd.Flags().String("id", "", "Transition ID (required)")
-	_ = jiraIssueTransitionCmd.MarkFlagRequired("id")
+	jiraIssueTransitionCmd.Flags().String("id", "", "Transition ID")
+	jiraIssueTransitionCmd.Flags().String("status", "", "Target status name (case-insensitive)")
 
 	// comment list flags
 	jiraIssueCommentListCmd.Flags().Int("max-results", 50, "Maximum number of results per page")
