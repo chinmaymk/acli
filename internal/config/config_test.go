@@ -221,6 +221,95 @@ func TestGetProfileMultipleNoDefault(t *testing.T) {
 	}
 }
 
+func TestGetProfileEnvVarOverrides(t *testing.T) {
+	cfg := &Config{
+		Profiles: map[string]Profile{
+			"test": {
+				Name:         "test",
+				AtlassianURL: "https://test.atlassian.net",
+				Email:        "user@example.com",
+				APIToken:     "config-token",
+			},
+		},
+	}
+
+	// Override API token via env var.
+	t.Setenv("ACLI_API_TOKEN", "env-token")
+	t.Setenv("ACLI_ATLASSIAN_URL", "")
+	t.Setenv("ACLI_EMAIL", "")
+
+	p, err := cfg.GetProfile("test")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if p.APIToken != "env-token" {
+		t.Errorf("expected API token 'env-token', got %q", p.APIToken)
+	}
+	// Non-overridden fields should stay the same.
+	if p.AtlassianURL != "https://test.atlassian.net" {
+		t.Errorf("expected URL from config, got %q", p.AtlassianURL)
+	}
+	if p.Email != "user@example.com" {
+		t.Errorf("expected email from config, got %q", p.Email)
+	}
+}
+
+func TestGetProfileEnvVarAllFields(t *testing.T) {
+	cfg := &Config{
+		Profiles: map[string]Profile{
+			"test": {
+				Name:         "test",
+				AtlassianURL: "https://test.atlassian.net",
+				Email:        "user@example.com",
+				APIToken:     "config-token",
+			},
+		},
+	}
+
+	t.Setenv("ACLI_ATLASSIAN_URL", "https://env.atlassian.net")
+	t.Setenv("ACLI_EMAIL", "env@example.com")
+	t.Setenv("ACLI_API_TOKEN", "env-token")
+
+	p, err := cfg.GetProfile("test")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if p.AtlassianURL != "https://env.atlassian.net" {
+		t.Errorf("expected URL 'https://env.atlassian.net', got %q", p.AtlassianURL)
+	}
+	if p.Email != "env@example.com" {
+		t.Errorf("expected email 'env@example.com', got %q", p.Email)
+	}
+	if p.APIToken != "env-token" {
+		t.Errorf("expected token 'env-token', got %q", p.APIToken)
+	}
+}
+
+func TestGetProfileEnvVarNoConfig(t *testing.T) {
+	cfg := &Config{
+		Profiles: map[string]Profile{},
+	}
+
+	t.Setenv("ACLI_ATLASSIAN_URL", "https://env.atlassian.net")
+	t.Setenv("ACLI_EMAIL", "env@example.com")
+	t.Setenv("ACLI_API_TOKEN", "env-token")
+
+	// Even with no profiles, env vars should produce a valid profile.
+	p, err := cfg.GetProfile("")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if p.AtlassianURL != "https://env.atlassian.net" {
+		t.Errorf("expected URL from env, got %q", p.AtlassianURL)
+	}
+	if p.Email != "env@example.com" {
+		t.Errorf("expected email from env, got %q", p.Email)
+	}
+	if p.APIToken != "env-token" {
+		t.Errorf("expected token from env, got %q", p.APIToken)
+	}
+}
+
 func TestLoadInvalidJSON(t *testing.T) {
 	tmpDir, cleanup := setupTestConfig(t)
 	defer cleanup()

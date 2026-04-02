@@ -75,26 +75,53 @@ func (c *Config) Save() error {
 }
 
 func (c *Config) GetProfile(name string) (Profile, error) {
+	var p Profile
+	var found bool
+
 	// Explicit profile name — look it up directly.
 	if name != "" {
-		p, ok := c.Profiles[name]
-		if !ok {
+		p, found = c.Profiles[name]
+		if !found {
 			return Profile{}, fmt.Errorf("profile %q not found", name)
 		}
+	}
+
+	if !found {
+		// No profile specified — use the configured default.
+		if c.DefaultProfile != "" {
+			p, found = c.Profiles[c.DefaultProfile]
+		}
+	}
+
+	if !found {
+		// Fall back to the sole profile if there's exactly one.
+		if len(c.Profiles) == 1 {
+			for _, p = range c.Profiles {
+				found = true
+			}
+		}
+	}
+
+	// Apply environment variable overrides. These take precedence over
+	// config-file values, allowing token injection via CI, containers, etc.
+	// Supported variables: ACLI_ATLASSIAN_URL, ACLI_EMAIL, ACLI_API_TOKEN.
+	if v := os.Getenv("ACLI_ATLASSIAN_URL"); v != "" {
+		p.AtlassianURL = v
+		found = true
+	}
+	if v := os.Getenv("ACLI_EMAIL"); v != "" {
+		p.Email = v
+		found = true
+	}
+	if v := os.Getenv("ACLI_API_TOKEN"); v != "" {
+		p.APIToken = v
+		found = true
+	}
+
+	if found {
 		return p, nil
 	}
-	// No profile specified — use the configured default.
-	if c.DefaultProfile != "" {
-		if p, ok := c.Profiles[c.DefaultProfile]; ok {
-			return p, nil
-		}
-	}
-	// Fall back to the sole profile if there's exactly one.
-	if len(c.Profiles) == 1 {
-		for _, p := range c.Profiles {
-			return p, nil
-		}
-	}
+
 	if len(c.Profiles) == 0 {
 		return Profile{}, fmt.Errorf("no profiles configured, run 'acli config setup' to create one")
 	}
