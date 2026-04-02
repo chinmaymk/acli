@@ -17,6 +17,11 @@ type Commit struct {
 			UUID        string `json:"uuid"`
 		} `json:"user"`
 	} `json:"author"`
+	Summary *struct {
+		Raw    string `json:"raw"`
+		Markup string `json:"markup"`
+		HTML   string `json:"html"`
+	} `json:"summary,omitempty"`
 	Parents []struct {
 		Hash string `json:"hash"`
 	} `json:"parents"`
@@ -25,6 +30,7 @@ type Commit struct {
 			Href string `json:"href"`
 		} `json:"html"`
 	} `json:"links"`
+	// Repository is present on full commit objects but not on base_commit (e.g. PR commits).
 	Repository struct {
 		FullName string `json:"full_name"`
 		UUID     string `json:"uuid"`

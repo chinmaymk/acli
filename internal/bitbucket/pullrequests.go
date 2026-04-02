@@ -317,6 +317,7 @@ func (c *Client) RemoveRequestChangesPullRequest(workspace, repoSlug string, prI
 
 type PRComment struct {
 	ID      int    `json:"id"`
+	Type    string `json:"type,omitempty"`
 	Content struct {
 		Raw    string `json:"raw"`
 		Markup string `json:"markup"`
@@ -328,7 +329,8 @@ type PRComment struct {
 		DisplayName string `json:"display_name"`
 		UUID        string `json:"uuid"`
 	} `json:"user"`
-	Inline *struct {
+	Deleted bool `json:"deleted,omitempty"`
+	Inline  *struct {
 		Path      string `json:"path"`
 		From      *int   `json:"from"`
 		To        *int   `json:"to"`
@@ -338,6 +340,18 @@ type PRComment struct {
 	Parent *struct {
 		ID int `json:"id"`
 	} `json:"parent,omitempty"`
+	Resolution *CommentResolution `json:"resolution,omitempty"`
+	Pending    *bool              `json:"pending,omitempty"`
+}
+
+// CommentResolution represents the resolution of a comment.
+type CommentResolution struct {
+	Type string `json:"type"`
+	User struct {
+		DisplayName string `json:"display_name"`
+		UUID        string `json:"uuid"`
+	} `json:"user"`
+	CreatedOn string `json:"created_on"`
 }
 
 func (c *Client) ListPRComments(workspace, repoSlug string, prID int, opts *PaginationOptions) ([]PRComment, error) {
@@ -638,10 +652,11 @@ func (c *Client) ListPRCommits(workspace, repoSlug string, prID int, opts *Pagin
 
 // CommitFile represents a file at a specific commit in a repository.
 type CommitFile struct {
-	Type        string `json:"type"`
-	Path        string `json:"path"`
-	EscapedPath string `json:"escaped_path,omitempty"`
-	Attributes  string `json:"attributes,omitempty"` // link, executable, subrepository, binary, lfs
+	Type        string  `json:"type"`
+	Path        string  `json:"path"`
+	Commit      *Commit `json:"commit,omitempty"`
+	Attributes  string  `json:"attributes,omitempty"` // link, executable, subrepository, binary, lfs
+	EscapedPath string  `json:"escaped_path,omitempty"`
 }
 
 // DiffStat represents file-level change statistics for a pull request.
