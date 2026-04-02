@@ -427,3 +427,156 @@ func TestDeletePRTask(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func TestListPRCommits(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "GET" {
+			t.Errorf("expected GET, got %s", r.Method)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(PaginatedResponse{
+			Values: json.RawMessage(`[{"hash": "abc123def456", "message": "Fix bug", "date": "2026-01-01T00:00:00+00:00"}]`),
+		})
+	}))
+	defer srv.Close()
+
+	c := newRedirectClient(srv)
+	commits, err := c.ListPRCommits("ws", "repo", 1, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(commits) != 1 {
+		t.Fatalf("expected 1 commit, got %d", len(commits))
+	}
+	if commits[0].Hash != "abc123def456" {
+		t.Errorf("unexpected hash: %s", commits[0].Hash)
+	}
+	if commits[0].Message != "Fix bug" {
+		t.Errorf("unexpected message: %s", commits[0].Message)
+	}
+}
+
+func TestListPRCommitsAll(t *testing.T) {
+	callCount := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		w.Header().Set("Content-Type", "application/json")
+		if callCount == 1 {
+			json.NewEncoder(w).Encode(PaginatedResponse{
+				Next:   "https://api.bitbucket.org/2.0/repositories/ws/repo/pullrequests/1/commits?page=2",
+				Values: json.RawMessage(`[{"hash": "aaa111"}]`),
+			})
+		} else {
+			json.NewEncoder(w).Encode(PaginatedResponse{
+				Values: json.RawMessage(`[{"hash": "bbb222"}]`),
+			})
+		}
+	}))
+	defer srv.Close()
+
+	c := newRedirectClient(srv)
+	commits, err := c.ListPRCommits("ws", "repo", 1, &PaginationOptions{All: true})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(commits) != 2 {
+		t.Errorf("expected 2 commits, got %d", len(commits))
+	}
+}
+
+func TestGetPRDiffStat(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(PaginatedResponse{
+			Values: json.RawMessage(`[{"status": "modified", "old": {"path": "main.go"}, "new": {"path": "main.go"}, "lines_added": 10, "lines_removed": 3}]`),
+		})
+	}))
+	defer srv.Close()
+
+	c := newRedirectClient(srv)
+	stats, err := c.GetPRDiffStat("ws", "repo", 1, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(stats) != 1 {
+		t.Fatalf("expected 1 diffstat, got %d", len(stats))
+	}
+	if stats[0].Status != "modified" {
+		t.Errorf("unexpected status: %s", stats[0].Status)
+	}
+	if stats[0].LinesAdded != 10 {
+		t.Errorf("expected 10 lines added, got %d", stats[0].LinesAdded)
+	}
+	if stats[0].LinesRemoved != 3 {
+		t.Errorf("expected 3 lines removed, got %d", stats[0].LinesRemoved)
+	}
+}
+
+func TestGetPRDiffStatAdded(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(PaginatedResponse{
+			Values: json.RawMessage(`[{"status": "added", "old": null, "new": {"path": "new_file.go"}, "lines_added": 50, "lines_removed": 0}]`),
+		})
+	}))
+	defer srv.Close()
+
+	c := newRedirectClient(srv)
+	stats, err := c.GetPRDiffStat("ws", "repo", 1, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(stats) != 1 {
+		t.Fatalf("expected 1 diffstat, got %d", len(stats))
+	}
+	if stats[0].Status != "added" {
+		t.Errorf("unexpected status: %s", stats[0].Status)
+	}
+	if stats[0].Old != nil {
+		t.Error("expected nil old for added file")
+	}
+	if stats[0].New.Path != "new_file.go" {
+		t.Errorf("unexpected new path: %s", stats[0].New.Path)
+	}
+}
+
+func TestListPRActivity(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(PaginatedResponse{
+			Values: json.RawMessage(`[
+				{"approval": {"date": "2026-01-01T00:00:00+00:00", "user": {"display_name": "Alice", "uuid": "{aaa}"}}},
+				{"update": {"state": "OPEN", "date": "2026-01-01T00:00:00+00:00", "author": {"display_name": "Bob"}}},
+				{"comment": {"id": 42, "content": {"raw": "Looks good"}, "user": {"display_name": "Carol"}}}
+			]`),
+		})
+	}))
+	defer srv.Close()
+
+	c := newRedirectClient(srv)
+	activities, err := c.ListPRActivity("ws", "repo", 1, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(activities) != 3 {
+		t.Fatalf("expected 3 activities, got %d", len(activities))
+	}
+	if activities[0].Approval == nil {
+		t.Error("expected approval activity")
+	}
+	if activities[0].Approval.User.DisplayName != "Alice" {
+		t.Errorf("unexpected approval user: %s", activities[0].Approval.User.DisplayName)
+	}
+	if activities[1].Update == nil {
+		t.Error("expected update activity")
+	}
+	if activities[1].Update.State != "OPEN" {
+		t.Errorf("unexpected update state: %s", activities[1].Update.State)
+	}
+	if activities[2].Comment == nil {
+		t.Error("expected comment activity")
+	}
+	if activities[2].Comment.ID != 42 {
+		t.Errorf("unexpected comment ID: %d", activities[2].Comment.ID)
+	}
+}

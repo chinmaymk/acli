@@ -587,3 +587,189 @@ func (c *Client) DeletePRTask(workspace, repoSlug string, prID, taskID int) erro
 		url.PathEscape(workspace), url.PathEscape(repoSlug), prID, taskID)
 	return c.deleteNoContent(path)
 }
+
+// PR Commits
+
+func (c *Client) ListPRCommits(workspace, repoSlug string, prID int, opts *PaginationOptions) ([]Commit, error) {
+	params := url.Values{}
+	if opts != nil {
+		opts.applyParams(params)
+	}
+	ensurePageLen(params)
+
+	path := fmt.Sprintf("/repositories/%s/%s/pullrequests/%d/commits",
+		url.PathEscape(workspace), url.PathEscape(repoSlug), prID)
+	if len(params) > 0 {
+		path += "?" + params.Encode()
+	}
+
+	if opts != nil && opts.All {
+		pages, err := c.getAll(path)
+		if err != nil && len(pages) == 0 {
+			return nil, err
+		}
+		var commits []Commit
+		for _, pg := range pages {
+			var pageCommits []Commit
+			if err := json.Unmarshal(pg.Values, &pageCommits); err != nil {
+				return commits, fmt.Errorf("parsing commits: %w", err)
+			}
+			commits = append(commits, pageCommits...)
+		}
+		return commits, nil
+	}
+
+	data, err := c.get(path)
+	if err != nil {
+		return nil, err
+	}
+	var page PaginatedResponse
+	if err := json.Unmarshal(data, &page); err != nil {
+		return nil, fmt.Errorf("parsing response: %w", err)
+	}
+	var commits []Commit
+	if err := json.Unmarshal(page.Values, &commits); err != nil {
+		return nil, fmt.Errorf("parsing commits: %w", err)
+	}
+	return commits, nil
+}
+
+// PR Diffstat
+
+// DiffStat represents file-level change statistics for a pull request.
+type DiffStat struct {
+	Status string `json:"status"`
+	Old    *struct {
+		Path string `json:"path"`
+		Type string `json:"type"`
+	} `json:"old"`
+	New *struct {
+		Path string `json:"path"`
+		Type string `json:"type"`
+	} `json:"new"`
+	LinesAdded   int `json:"lines_added"`
+	LinesRemoved int `json:"lines_removed"`
+}
+
+func (c *Client) GetPRDiffStat(workspace, repoSlug string, prID int, opts *PaginationOptions) ([]DiffStat, error) {
+	params := url.Values{}
+	if opts != nil {
+		opts.applyParams(params)
+	}
+	ensurePageLen(params)
+
+	path := fmt.Sprintf("/repositories/%s/%s/pullrequests/%d/diffstat",
+		url.PathEscape(workspace), url.PathEscape(repoSlug), prID)
+	if len(params) > 0 {
+		path += "?" + params.Encode()
+	}
+
+	if opts != nil && opts.All {
+		pages, err := c.getAll(path)
+		if err != nil && len(pages) == 0 {
+			return nil, err
+		}
+		var stats []DiffStat
+		for _, pg := range pages {
+			var pageStats []DiffStat
+			if err := json.Unmarshal(pg.Values, &pageStats); err != nil {
+				return stats, fmt.Errorf("parsing diffstat: %w", err)
+			}
+			stats = append(stats, pageStats...)
+		}
+		return stats, nil
+	}
+
+	data, err := c.get(path)
+	if err != nil {
+		return nil, err
+	}
+	var page PaginatedResponse
+	if err := json.Unmarshal(data, &page); err != nil {
+		return nil, fmt.Errorf("parsing response: %w", err)
+	}
+	var stats []DiffStat
+	if err := json.Unmarshal(page.Values, &stats); err != nil {
+		return nil, fmt.Errorf("parsing diffstat: %w", err)
+	}
+	return stats, nil
+}
+
+// PR Activity
+
+// PRActivity represents an activity entry on a pull request (comment, approval, update, etc).
+type PRActivity struct {
+	Approval *struct {
+		Date string `json:"date"`
+		User struct {
+			DisplayName string `json:"display_name"`
+			UUID        string `json:"uuid"`
+		} `json:"user"`
+	} `json:"approval,omitempty"`
+	Update *struct {
+		Date        string `json:"date"`
+		Title       string `json:"title"`
+		Description string `json:"description"`
+		State       string `json:"state"`
+		Reason      string `json:"reason"`
+		Author      struct {
+			DisplayName string `json:"display_name"`
+			UUID        string `json:"uuid"`
+		} `json:"author"`
+		Source struct {
+			Branch struct {
+				Name string `json:"name"`
+			} `json:"branch"`
+		} `json:"source"`
+		Destination struct {
+			Branch struct {
+				Name string `json:"name"`
+			} `json:"branch"`
+		} `json:"destination"`
+	} `json:"update,omitempty"`
+	Comment *PRComment `json:"comment,omitempty"`
+}
+
+func (c *Client) ListPRActivity(workspace, repoSlug string, prID int, opts *PaginationOptions) ([]PRActivity, error) {
+	params := url.Values{}
+	if opts != nil {
+		opts.applyParams(params)
+	}
+	ensurePageLen(params)
+
+	path := fmt.Sprintf("/repositories/%s/%s/pullrequests/%d/activity",
+		url.PathEscape(workspace), url.PathEscape(repoSlug), prID)
+	if len(params) > 0 {
+		path += "?" + params.Encode()
+	}
+
+	if opts != nil && opts.All {
+		pages, err := c.getAll(path)
+		if err != nil && len(pages) == 0 {
+			return nil, err
+		}
+		var activities []PRActivity
+		for _, pg := range pages {
+			var pageActivities []PRActivity
+			if err := json.Unmarshal(pg.Values, &pageActivities); err != nil {
+				return activities, fmt.Errorf("parsing activity: %w", err)
+			}
+			activities = append(activities, pageActivities...)
+		}
+		return activities, nil
+	}
+
+	data, err := c.get(path)
+	if err != nil {
+		return nil, err
+	}
+	var page PaginatedResponse
+	if err := json.Unmarshal(data, &page); err != nil {
+		return nil, fmt.Errorf("parsing response: %w", err)
+	}
+	var activities []PRActivity
+	if err := json.Unmarshal(page.Values, &activities); err != nil {
+		return nil, fmt.Errorf("parsing activity: %w", err)
+	}
+	return activities, nil
+}
