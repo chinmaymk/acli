@@ -503,7 +503,9 @@ func init() {
 			_, _ = fmt.Fprintln(w, "STATUS\tFILE\tADDED\tREMOVED")
 			for _, s := range stats {
 				filePath := ""
-				if s.New != nil {
+				if s.Status == "renamed" && s.Old != nil && s.New != nil {
+					filePath = s.Old.Path + " → " + s.New.Path
+				} else if s.New != nil {
 					filePath = s.New.Path
 				} else if s.Old != nil {
 					filePath = s.Old.Path

@@ -636,19 +636,22 @@ func (c *Client) ListPRCommits(workspace, repoSlug string, prID int, opts *Pagin
 
 // PR Diffstat
 
+// CommitFile represents a file at a specific commit in a repository.
+type CommitFile struct {
+	Type        string `json:"type"`
+	Path        string `json:"path"`
+	EscapedPath string `json:"escaped_path,omitempty"`
+	Attributes  string `json:"attributes,omitempty"` // link, executable, subrepository, binary, lfs
+}
+
 // DiffStat represents file-level change statistics for a pull request.
 type DiffStat struct {
-	Status string `json:"status"`
-	Old    *struct {
-		Path string `json:"path"`
-		Type string `json:"type"`
-	} `json:"old"`
-	New *struct {
-		Path string `json:"path"`
-		Type string `json:"type"`
-	} `json:"new"`
-	LinesAdded   int `json:"lines_added"`
-	LinesRemoved int `json:"lines_removed"`
+	Type         string      `json:"type"`
+	Status       string      `json:"status"` // added, removed, modified, renamed
+	Old          *CommitFile `json:"old"`
+	New          *CommitFile `json:"new"`
+	LinesAdded   int         `json:"lines_added"`
+	LinesRemoved int         `json:"lines_removed"`
 }
 
 func (c *Client) GetPRDiffStat(workspace, repoSlug string, prID int, opts *PaginationOptions) ([]DiffStat, error) {
@@ -699,35 +702,74 @@ func (c *Client) GetPRDiffStat(workspace, repoSlug string, prID int, opts *Pagin
 
 // PRActivity represents an activity entry on a pull request (comment, approval, update, etc).
 type PRActivity struct {
-	Approval *struct {
-		Date string `json:"date"`
-		User struct {
-			DisplayName string `json:"display_name"`
-			UUID        string `json:"uuid"`
-		} `json:"user"`
-	} `json:"approval,omitempty"`
-	Update *struct {
-		Date        string `json:"date"`
-		Title       string `json:"title"`
-		Description string `json:"description"`
-		State       string `json:"state"`
-		Reason      string `json:"reason"`
-		Author      struct {
-			DisplayName string `json:"display_name"`
-			UUID        string `json:"uuid"`
-		} `json:"author"`
-		Source struct {
-			Branch struct {
-				Name string `json:"name"`
-			} `json:"branch"`
-		} `json:"source"`
-		Destination struct {
-			Branch struct {
-				Name string `json:"name"`
-			} `json:"branch"`
-		} `json:"destination"`
-	} `json:"update,omitempty"`
-	Comment *PRComment `json:"comment,omitempty"`
+	Approval *PRActivityApproval `json:"approval,omitempty"`
+	Update   *PRActivityUpdate   `json:"update,omitempty"`
+	Comment  *PRComment          `json:"comment,omitempty"`
+	// PullRequest is the PR reference included in each activity entry.
+	PullRequest *struct {
+		Type  string `json:"type"`
+		ID    int    `json:"id"`
+		Title string `json:"title"`
+		Links struct {
+			HTML struct {
+				Href string `json:"href"`
+			} `json:"html"`
+		} `json:"links"`
+	} `json:"pull_request,omitempty"`
+}
+
+// PRActivityApproval represents an approval activity on a pull request.
+type PRActivityApproval struct {
+	Date string `json:"date"`
+	User struct {
+		DisplayName string `json:"display_name"`
+		UUID        string `json:"uuid"`
+		Nickname    string `json:"nickname"`
+		Type        string `json:"type"`
+		AccountID   string `json:"account_id"`
+	} `json:"user"`
+}
+
+// PRActivityUpdate represents a state-change activity on a pull request.
+type PRActivityUpdate struct {
+	Date        string `json:"date"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	State       string `json:"state"` // OPEN, MERGED, DECLINED
+	Reason      string `json:"reason"`
+	Author      struct {
+		DisplayName string `json:"display_name"`
+		UUID        string `json:"uuid"`
+		Nickname    string `json:"nickname"`
+		Type        string `json:"type"`
+		AccountID   string `json:"account_id"`
+	} `json:"author"`
+	Source struct {
+		Branch struct {
+			Name string `json:"name"`
+		} `json:"branch"`
+		Commit struct {
+			Hash string `json:"hash"`
+			Type string `json:"type"`
+		} `json:"commit"`
+		Repository struct {
+			FullName string `json:"full_name"`
+			UUID     string `json:"uuid"`
+		} `json:"repository"`
+	} `json:"source"`
+	Destination struct {
+		Branch struct {
+			Name string `json:"name"`
+		} `json:"branch"`
+		Commit struct {
+			Hash string `json:"hash"`
+			Type string `json:"type"`
+		} `json:"commit"`
+		Repository struct {
+			FullName string `json:"full_name"`
+			UUID     string `json:"uuid"`
+		} `json:"repository"`
+	} `json:"destination"`
 }
 
 func (c *Client) ListPRActivity(workspace, repoSlug string, prID int, opts *PaginationOptions) ([]PRActivity, error) {
