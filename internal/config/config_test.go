@@ -221,36 +221,6 @@ func TestGetProfileMultipleNoDefault(t *testing.T) {
 	}
 }
 
-func TestBitbucketAuthFallback(t *testing.T) {
-	p := Profile{
-		Email:    "shared@example.com",
-		APIToken: "shared-token",
-	}
-	email, token := p.BitbucketAuth()
-	if email != "shared@example.com" {
-		t.Errorf("expected shared email, got %q", email)
-	}
-	if token != "shared-token" {
-		t.Errorf("expected shared token, got %q", token)
-	}
-}
-
-func TestBitbucketAuthSeparate(t *testing.T) {
-	p := Profile{
-		Email:          "shared@example.com",
-		APIToken:       "shared-token",
-		BitbucketEmail: "bb@example.com",
-		BitbucketToken: "bb-app-password",
-	}
-	email, token := p.BitbucketAuth()
-	if email != "bb@example.com" {
-		t.Errorf("expected bitbucket email, got %q", email)
-	}
-	if token != "bb-app-password" {
-		t.Errorf("expected bitbucket token, got %q", token)
-	}
-}
-
 func TestGetProfileEnvVarOverrides(t *testing.T) {
 	cfg := &Config{
 		Profiles: map[string]Profile{
@@ -337,44 +307,6 @@ func TestGetProfileEnvVarNoConfig(t *testing.T) {
 	}
 	if p.APIToken != "env-token" {
 		t.Errorf("expected token from env, got %q", p.APIToken)
-	}
-}
-
-func TestGetProfileEnvVarBitbucket(t *testing.T) {
-	cfg := &Config{
-		Profiles: map[string]Profile{
-			"test": {
-				Name:     "test",
-				Email:    "shared@example.com",
-				APIToken: "shared-token",
-			},
-		},
-	}
-
-	t.Setenv("ACLI_ATLASSIAN_URL", "")
-	t.Setenv("ACLI_EMAIL", "")
-	t.Setenv("ACLI_API_TOKEN", "")
-	t.Setenv("ACLI_BITBUCKET_EMAIL", "bb@example.com")
-	t.Setenv("ACLI_BITBUCKET_TOKEN", "bb-app-password")
-
-	p, err := cfg.GetProfile("test")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	// Shared fields should be unchanged.
-	if p.Email != "shared@example.com" {
-		t.Errorf("expected shared email, got %q", p.Email)
-	}
-	if p.APIToken != "shared-token" {
-		t.Errorf("expected shared token, got %q", p.APIToken)
-	}
-	// Bitbucket fields should come from env.
-	email, token := p.BitbucketAuth()
-	if email != "bb@example.com" {
-		t.Errorf("expected bb email from env, got %q", email)
-	}
-	if token != "bb-app-password" {
-		t.Errorf("expected bb token from env, got %q", token)
 	}
 }
 

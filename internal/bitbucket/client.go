@@ -20,18 +20,15 @@ type Client struct {
 }
 
 // NewClient creates a Bitbucket client using profile credentials.
-// It prefers Bitbucket-specific credentials (bitbucket_email / bitbucket_token)
-// and falls back to the shared email / api_token fields.
 func NewClient(profile config.Profile) (*Client, error) {
-	email, token := profile.BitbucketAuth()
-	if token == "" {
+	if profile.APIToken == "" {
 		return nil, fmt.Errorf("no API token configured: run 'acli config setup' to set one")
 	}
 
 	return &Client{
 		httpClient: &http.Client{},
-		token:      token,
-		email:      email,
+		token:      profile.APIToken,
+		email:      profile.Email,
 	}, nil
 }
 
