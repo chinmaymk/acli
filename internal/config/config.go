@@ -18,7 +18,26 @@ type Profile struct {
 	AtlassianURL string   `json:"atlassian_url"`
 	Email        string   `json:"email"`
 	APIToken     string   `json:"api_token"`
-	Defaults     Defaults `json:"defaults,omitempty"`
+	// Optional Bitbucket-specific credentials. When empty, falls back to
+	// Email / APIToken. Bitbucket Cloud uses app passwords which are
+	// separate from Atlassian API tokens used for Jira/Confluence.
+	BitbucketEmail string `json:"bitbucket_email,omitempty"`
+	BitbucketToken string `json:"bitbucket_token,omitempty"`
+	Defaults       Defaults `json:"defaults,omitempty"`
+}
+
+// BitbucketAuth returns the effective email and token for Bitbucket,
+// preferring the Bitbucket-specific fields and falling back to the shared ones.
+func (p Profile) BitbucketAuth() (email, token string) {
+	email = p.BitbucketEmail
+	if email == "" {
+		email = p.Email
+	}
+	token = p.BitbucketToken
+	if token == "" {
+		token = p.APIToken
+	}
+	return
 }
 
 type Config struct {
@@ -115,6 +134,14 @@ func (c *Config) GetProfile(name string) (Profile, error) {
 	}
 	if v := os.Getenv("ACLI_API_TOKEN"); v != "" {
 		p.APIToken = v
+		found = true
+	}
+	if v := os.Getenv("ACLI_BITBUCKET_EMAIL"); v != "" {
+		p.BitbucketEmail = v
+		found = true
+	}
+	if v := os.Getenv("ACLI_BITBUCKET_TOKEN"); v != "" {
+		p.BitbucketToken = v
 		found = true
 	}
 

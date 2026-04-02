@@ -29,8 +29,11 @@ You'll be prompted for:
   - Atlassian instance URL (for Jira/Confluence)
   - Email address (leave blank for OAuth/scoped token auth)
   - API token or OAuth/scoped access token
+  - Optional: separate Bitbucket email and app password
 
-The same credentials are used for Jira, Confluence, and Bitbucket.
+Bitbucket Cloud uses app passwords which are separate from Atlassian API
+tokens. If you leave the Bitbucket fields blank, the shared email/token
+are used for Bitbucket as well.
 
 Auth modes:
   - Email + API token → Basic Auth (personal API tokens)
@@ -62,11 +65,20 @@ Auth modes:
 			apiToken = existing.APIToken
 		}
 
+		fmt.Println("\n  Bitbucket credentials (leave blank to use the same email/token above)")
+		bbEmail := promptWithDefault(reader, "Bitbucket Email", existing.BitbucketEmail, "")
+		bbToken := promptWithDefault(reader, "Bitbucket App Password", maskToken(existing.BitbucketToken), "")
+		if bbToken == maskToken(existing.BitbucketToken) && existing.BitbucketToken != "" {
+			bbToken = existing.BitbucketToken
+		}
+
 		profile := config.Profile{
-			Name:         profileName,
-			AtlassianURL: strings.TrimRight(atlassianURL, "/"),
-			Email:        email,
-			APIToken:     apiToken,
+			Name:           profileName,
+			AtlassianURL:   strings.TrimRight(atlassianURL, "/"),
+			Email:          email,
+			APIToken:       apiToken,
+			BitbucketEmail: bbEmail,
+			BitbucketToken: bbToken,
 		}
 
 		if cfg.Profiles == nil {
@@ -143,6 +155,10 @@ var configShowCmd = &cobra.Command{
 		fmt.Printf("  Atlassian URL:    %s\n", p.AtlassianURL)
 		fmt.Printf("  Email:            %s\n", p.Email)
 		fmt.Printf("  API Token:        %s\n", maskToken(p.APIToken))
+		if p.BitbucketEmail != "" || p.BitbucketToken != "" {
+			fmt.Printf("  Bitbucket Email:  %s\n", p.BitbucketEmail)
+			fmt.Printf("  Bitbucket Token:  %s\n", maskToken(p.BitbucketToken))
+		}
 		if p.Defaults.Project != "" || p.Defaults.Workspace != "" || p.Defaults.BBProject != "" {
 			fmt.Println("  Defaults:")
 			if p.Defaults.Project != "" {
