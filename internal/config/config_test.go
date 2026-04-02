@@ -310,6 +310,22 @@ func TestGetProfileEnvVarNoConfig(t *testing.T) {
 	}
 }
 
+func TestGetProfileEnvVarPartialNoConfig(t *testing.T) {
+	cfg := &Config{
+		Profiles: map[string]Profile{},
+	}
+
+	// Only token set — not enough without a config profile.
+	t.Setenv("ACLI_ATLASSIAN_URL", "")
+	t.Setenv("ACLI_EMAIL", "")
+	t.Setenv("ACLI_API_TOKEN", "env-token")
+
+	_, err := cfg.GetProfile("")
+	if err == nil {
+		t.Fatal("expected error when only partial env vars are set without a config profile")
+	}
+}
+
 func TestLoadInvalidJSON(t *testing.T) {
 	tmpDir, cleanup := setupTestConfig(t)
 	defer cleanup()

@@ -105,16 +105,22 @@ func (c *Config) GetProfile(name string) (Profile, error) {
 	// Apply environment variable overrides. These take precedence over
 	// config-file values, allowing token injection via CI, containers, etc.
 	// Supported variables: ACLI_ATLASSIAN_URL, ACLI_EMAIL, ACLI_API_TOKEN.
-	if v := os.Getenv("ACLI_ATLASSIAN_URL"); v != "" {
-		p.AtlassianURL = v
-		found = true
+	envURL := os.Getenv("ACLI_ATLASSIAN_URL")
+	envEmail := os.Getenv("ACLI_EMAIL")
+	envToken := os.Getenv("ACLI_API_TOKEN")
+
+	if envURL != "" {
+		p.AtlassianURL = envURL
 	}
-	if v := os.Getenv("ACLI_EMAIL"); v != "" {
-		p.Email = v
-		found = true
+	if envEmail != "" {
+		p.Email = envEmail
 	}
-	if v := os.Getenv("ACLI_API_TOKEN"); v != "" {
-		p.APIToken = v
+	if envToken != "" {
+		p.APIToken = envToken
+	}
+	// When no config profile was found, all three env vars must be set
+	// to constitute a valid profile.
+	if !found && envURL != "" && envEmail != "" && envToken != "" {
 		found = true
 	}
 
