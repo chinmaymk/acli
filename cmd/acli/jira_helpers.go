@@ -110,6 +110,16 @@ func newTabWriter() *tabwriter.Writer {
 	return tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 }
 
+// firstLine returns the first line of a string.
+func firstLine(s string) string {
+	for i, c := range s {
+		if c == '\n' || c == '\r' {
+			return s[:i]
+		}
+	}
+	return s
+}
+
 // truncate truncates a string to maxLen characters, appending "..." if truncated.
 func truncate(s string, maxLen int) string {
 	if len(s) <= maxLen {

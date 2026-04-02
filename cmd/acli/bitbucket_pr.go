@@ -425,4 +425,152 @@ func init() {
 			return nil
 		},
 	})
+
+	// pr commits
+	prCommitsCmd := &cobra.Command{
+		Use:     "commits [workspace] <repo-slug> <pr-id>",
+		Short:   "List commits on a pull request",
+		Aliases: []string{"log"},
+		Args:    cobra.RangeArgs(2, 3),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, repoSlug, idStr, err := resolveWorkspaceRepoAndID(cmd, args)
+			if err != nil {
+				return err
+			}
+			prID, err := strconv.Atoi(idStr)
+			if err != nil {
+				return fmt.Errorf("invalid PR ID: %s", idStr)
+			}
+			client, err := getBitbucketClient(cmd)
+			if err != nil {
+				return err
+			}
+
+			commits, err := client.ListPRCommits(workspace, repoSlug, prID, getBBPaginationOpts(cmd))
+			if err != nil {
+				return err
+			}
+
+			if isJSONOutput(cmd) {
+				return outputJSON(commits)
+			}
+
+			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+			_, _ = fmt.Fprintln(w, "HASH\tMESSAGE\tAUTHOR\tDATE")
+			for _, c := range commits {
+				hash := c.Hash
+				if len(hash) > 12 {
+					hash = hash[:12]
+				}
+				_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
+					hash, truncate(firstLine(c.Message), 60), c.Author.Raw, c.Date)
+			}
+			return w.Flush()
+		},
+	}
+	addBBPaginationFlags(prCommitsCmd)
+	bbPRCmd.AddCommand(prCommitsCmd)
+
+	// pr diffstat
+	prDiffstatCmd := &cobra.Command{
+		Use:   "diffstat [workspace] <repo-slug> <pr-id>",
+		Short: "Get file-level diff statistics for a pull request",
+		Args:  cobra.RangeArgs(2, 3),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, repoSlug, idStr, err := resolveWorkspaceRepoAndID(cmd, args)
+			if err != nil {
+				return err
+			}
+			prID, err := strconv.Atoi(idStr)
+			if err != nil {
+				return fmt.Errorf("invalid PR ID: %s", idStr)
+			}
+			client, err := getBitbucketClient(cmd)
+			if err != nil {
+				return err
+			}
+
+			stats, err := client.GetPRDiffStat(workspace, repoSlug, prID, getBBPaginationOpts(cmd))
+			if err != nil {
+				return err
+			}
+
+			if isJSONOutput(cmd) {
+				return outputJSON(stats)
+			}
+
+			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+			_, _ = fmt.Fprintln(w, "STATUS\tFILE\tADDED\tREMOVED")
+			for _, s := range stats {
+				filePath := ""
+				if s.Status == "renamed" && s.Old != nil && s.New != nil {
+					filePath = s.Old.Path + " → " + s.New.Path
+				} else if s.New != nil {
+					filePath = s.New.Path
+				} else if s.Old != nil {
+					filePath = s.Old.Path
+				}
+				_, _ = fmt.Fprintf(w, "%s\t%s\t+%d\t-%d\n",
+					s.Status, filePath, s.LinesAdded, s.LinesRemoved)
+			}
+			return w.Flush()
+		},
+	}
+	addBBPaginationFlags(prDiffstatCmd)
+	bbPRCmd.AddCommand(prDiffstatCmd)
+
+	// pr activity
+	prActivityCmd := &cobra.Command{
+		Use:   "activity [workspace] <repo-slug> <pr-id>",
+		Short: "List activity on a pull request (comments, approvals, updates)",
+		Args:  cobra.RangeArgs(2, 3),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, repoSlug, idStr, err := resolveWorkspaceRepoAndID(cmd, args)
+			if err != nil {
+				return err
+			}
+			prID, err := strconv.Atoi(idStr)
+			if err != nil {
+				return fmt.Errorf("invalid PR ID: %s", idStr)
+			}
+			client, err := getBitbucketClient(cmd)
+			if err != nil {
+				return err
+			}
+
+			activities, err := client.ListPRActivity(workspace, repoSlug, prID, getBBPaginationOpts(cmd))
+			if err != nil {
+				return err
+			}
+
+			if isJSONOutput(cmd) {
+				return outputJSON(activities)
+			}
+
+			for _, a := range activities {
+				switch {
+				case a.Approval != nil:
+					fmt.Printf("[APPROVAL] %s approved on %s\n", a.Approval.User.DisplayName, a.Approval.Date)
+				case a.Update != nil:
+					fmt.Printf("[UPDATE] %s changed state to %s on %s\n",
+						a.Update.Author.DisplayName, a.Update.State, a.Update.Date)
+					if a.Update.Reason != "" {
+						fmt.Printf("  Reason: %s\n", a.Update.Reason)
+					}
+				case a.Comment != nil:
+					fmt.Printf("[COMMENT] #%d by %s (%s)\n", a.Comment.ID, a.Comment.User.DisplayName, a.Comment.CreatedOn)
+					if a.Comment.Inline != nil {
+						fmt.Printf("  File: %s\n", a.Comment.Inline.Path)
+					}
+					fmt.Printf("  %s\n", truncate(a.Comment.Content.Raw, 120))
+				default:
+					fmt.Println("[UNKNOWN] unrecognized activity type")
+				}
+				fmt.Println()
+			}
+			return nil
+		},
+	}
+	addBBPaginationFlags(prActivityCmd)
+	bbPRCmd.AddCommand(prActivityCmd)
 }

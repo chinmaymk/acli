@@ -317,6 +317,7 @@ func (c *Client) RemoveRequestChangesPullRequest(workspace, repoSlug string, prI
 
 type PRComment struct {
 	ID      int    `json:"id"`
+	Type    string `json:"type,omitempty"`
 	Content struct {
 		Raw    string `json:"raw"`
 		Markup string `json:"markup"`
@@ -328,7 +329,8 @@ type PRComment struct {
 		DisplayName string `json:"display_name"`
 		UUID        string `json:"uuid"`
 	} `json:"user"`
-	Inline *struct {
+	Deleted bool `json:"deleted,omitempty"`
+	Inline  *struct {
 		Path      string `json:"path"`
 		From      *int   `json:"from"`
 		To        *int   `json:"to"`
@@ -338,6 +340,18 @@ type PRComment struct {
 	Parent *struct {
 		ID int `json:"id"`
 	} `json:"parent,omitempty"`
+	Resolution *CommentResolution `json:"resolution,omitempty"`
+	Pending    *bool              `json:"pending,omitempty"`
+}
+
+// CommentResolution represents the resolution of a comment.
+type CommentResolution struct {
+	Type string `json:"type"`
+	User struct {
+		DisplayName string `json:"display_name"`
+		UUID        string `json:"uuid"`
+	} `json:"user"`
+	CreatedOn string `json:"created_on"`
 }
 
 func (c *Client) ListPRComments(workspace, repoSlug string, prID int, opts *PaginationOptions) ([]PRComment, error) {
@@ -586,4 +600,233 @@ func (c *Client) DeletePRTask(workspace, repoSlug string, prID, taskID int) erro
 	path := fmt.Sprintf("/repositories/%s/%s/pullrequests/%d/tasks/%d",
 		url.PathEscape(workspace), url.PathEscape(repoSlug), prID, taskID)
 	return c.deleteNoContent(path)
+}
+
+// PR Commits
+
+func (c *Client) ListPRCommits(workspace, repoSlug string, prID int, opts *PaginationOptions) ([]Commit, error) {
+	params := url.Values{}
+	if opts != nil {
+		opts.applyParams(params)
+	}
+	ensurePageLen(params)
+
+	path := fmt.Sprintf("/repositories/%s/%s/pullrequests/%d/commits",
+		url.PathEscape(workspace), url.PathEscape(repoSlug), prID)
+	if len(params) > 0 {
+		path += "?" + params.Encode()
+	}
+
+	if opts != nil && opts.All {
+		pages, err := c.getAll(path)
+		if err != nil && len(pages) == 0 {
+			return nil, err
+		}
+		var commits []Commit
+		for _, pg := range pages {
+			var pageCommits []Commit
+			if err := json.Unmarshal(pg.Values, &pageCommits); err != nil {
+				return commits, fmt.Errorf("parsing commits: %w", err)
+			}
+			commits = append(commits, pageCommits...)
+		}
+		return commits, nil
+	}
+
+	data, err := c.get(path)
+	if err != nil {
+		return nil, err
+	}
+	var page PaginatedResponse
+	if err := json.Unmarshal(data, &page); err != nil {
+		return nil, fmt.Errorf("parsing response: %w", err)
+	}
+	var commits []Commit
+	if err := json.Unmarshal(page.Values, &commits); err != nil {
+		return nil, fmt.Errorf("parsing commits: %w", err)
+	}
+	return commits, nil
+}
+
+// PR Diffstat
+
+// CommitFile represents a file at a specific commit in a repository.
+type CommitFile struct {
+	Type        string  `json:"type"`
+	Path        string  `json:"path"`
+	Commit      *Commit `json:"commit,omitempty"`
+	Attributes  string  `json:"attributes,omitempty"` // link, executable, subrepository, binary, lfs
+	EscapedPath string  `json:"escaped_path,omitempty"`
+}
+
+// DiffStat represents file-level change statistics for a pull request.
+type DiffStat struct {
+	Type         string      `json:"type"`
+	Status       string      `json:"status"` // added, removed, modified, renamed
+	Old          *CommitFile `json:"old"`
+	New          *CommitFile `json:"new"`
+	LinesAdded   int         `json:"lines_added"`
+	LinesRemoved int         `json:"lines_removed"`
+}
+
+func (c *Client) GetPRDiffStat(workspace, repoSlug string, prID int, opts *PaginationOptions) ([]DiffStat, error) {
+	params := url.Values{}
+	if opts != nil {
+		opts.applyParams(params)
+	}
+	ensurePageLen(params)
+
+	path := fmt.Sprintf("/repositories/%s/%s/pullrequests/%d/diffstat",
+		url.PathEscape(workspace), url.PathEscape(repoSlug), prID)
+	if len(params) > 0 {
+		path += "?" + params.Encode()
+	}
+
+	if opts != nil && opts.All {
+		pages, err := c.getAll(path)
+		if err != nil && len(pages) == 0 {
+			return nil, err
+		}
+		var stats []DiffStat
+		for _, pg := range pages {
+			var pageStats []DiffStat
+			if err := json.Unmarshal(pg.Values, &pageStats); err != nil {
+				return stats, fmt.Errorf("parsing diffstat: %w", err)
+			}
+			stats = append(stats, pageStats...)
+		}
+		return stats, nil
+	}
+
+	data, err := c.get(path)
+	if err != nil {
+		return nil, err
+	}
+	var page PaginatedResponse
+	if err := json.Unmarshal(data, &page); err != nil {
+		return nil, fmt.Errorf("parsing response: %w", err)
+	}
+	var stats []DiffStat
+	if err := json.Unmarshal(page.Values, &stats); err != nil {
+		return nil, fmt.Errorf("parsing diffstat: %w", err)
+	}
+	return stats, nil
+}
+
+// PR Activity
+
+// PRActivity represents an activity entry on a pull request (comment, approval, update, etc).
+type PRActivity struct {
+	Approval *PRActivityApproval `json:"approval,omitempty"`
+	Update   *PRActivityUpdate   `json:"update,omitempty"`
+	Comment  *PRComment          `json:"comment,omitempty"`
+	// PullRequest is the PR reference included in each activity entry.
+	PullRequest *struct {
+		Type  string `json:"type"`
+		ID    int    `json:"id"`
+		Title string `json:"title"`
+		Links struct {
+			HTML struct {
+				Href string `json:"href"`
+			} `json:"html"`
+		} `json:"links"`
+	} `json:"pull_request,omitempty"`
+}
+
+// PRActivityApproval represents an approval activity on a pull request.
+type PRActivityApproval struct {
+	Date string `json:"date"`
+	User struct {
+		DisplayName string `json:"display_name"`
+		UUID        string `json:"uuid"`
+		Nickname    string `json:"nickname"`
+		Type        string `json:"type"`
+		AccountID   string `json:"account_id"`
+	} `json:"user"`
+}
+
+// PRActivityUpdate represents a state-change activity on a pull request.
+type PRActivityUpdate struct {
+	Date        string `json:"date"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	State       string `json:"state"` // OPEN, MERGED, DECLINED
+	Reason      string `json:"reason"`
+	Author      struct {
+		DisplayName string `json:"display_name"`
+		UUID        string `json:"uuid"`
+		Nickname    string `json:"nickname"`
+		Type        string `json:"type"`
+		AccountID   string `json:"account_id"`
+	} `json:"author"`
+	Source struct {
+		Branch struct {
+			Name string `json:"name"`
+		} `json:"branch"`
+		Commit struct {
+			Hash string `json:"hash"`
+			Type string `json:"type"`
+		} `json:"commit"`
+		Repository struct {
+			FullName string `json:"full_name"`
+			UUID     string `json:"uuid"`
+		} `json:"repository"`
+	} `json:"source"`
+	Destination struct {
+		Branch struct {
+			Name string `json:"name"`
+		} `json:"branch"`
+		Commit struct {
+			Hash string `json:"hash"`
+			Type string `json:"type"`
+		} `json:"commit"`
+		Repository struct {
+			FullName string `json:"full_name"`
+			UUID     string `json:"uuid"`
+		} `json:"repository"`
+	} `json:"destination"`
+}
+
+func (c *Client) ListPRActivity(workspace, repoSlug string, prID int, opts *PaginationOptions) ([]PRActivity, error) {
+	params := url.Values{}
+	if opts != nil {
+		opts.applyParams(params)
+	}
+	ensurePageLen(params)
+
+	path := fmt.Sprintf("/repositories/%s/%s/pullrequests/%d/activity",
+		url.PathEscape(workspace), url.PathEscape(repoSlug), prID)
+	if len(params) > 0 {
+		path += "?" + params.Encode()
+	}
+
+	if opts != nil && opts.All {
+		pages, err := c.getAll(path)
+		if err != nil && len(pages) == 0 {
+			return nil, err
+		}
+		var activities []PRActivity
+		for _, pg := range pages {
+			var pageActivities []PRActivity
+			if err := json.Unmarshal(pg.Values, &pageActivities); err != nil {
+				return activities, fmt.Errorf("parsing activity: %w", err)
+			}
+			activities = append(activities, pageActivities...)
+		}
+		return activities, nil
+	}
+
+	data, err := c.get(path)
+	if err != nil {
+		return nil, err
+	}
+	var page PaginatedResponse
+	if err := json.Unmarshal(data, &page); err != nil {
+		return nil, fmt.Errorf("parsing response: %w", err)
+	}
+	var activities []PRActivity
+	if err := json.Unmarshal(page.Values, &activities); err != nil {
+		return nil, fmt.Errorf("parsing activity: %w", err)
+	}
+	return activities, nil
 }
