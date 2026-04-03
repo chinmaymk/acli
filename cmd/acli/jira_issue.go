@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/chinmaymk/acli/internal/adf"
 	"github.com/chinmaymk/acli/internal/jira"
 	"github.com/spf13/cobra"
 )
@@ -151,17 +152,7 @@ var jiraIssueGetCmd = &cobra.Command{
 			reporter = f.Reporter.DisplayName
 		}
 
-		description := ""
-		if f.Description != nil {
-			switch f.Description.(type) {
-			case map[string]interface{}:
-				description = "[Atlassian Document Format]"
-			case string:
-				description = f.Description.(string)
-			default:
-				description = fmt.Sprintf("%v", f.Description)
-			}
-		}
+		description := adf.Render(f.Description)
 
 		var labels []string
 		labels = append(labels, f.Labels...)
@@ -558,7 +549,7 @@ var jiraIssueCommentListCmd = &cobra.Command{
 			if c.Author != nil {
 				author = c.Author.DisplayName
 			}
-			body := extractCommentBody(c.Body)
+			body := adf.Render(c.Body)
 			if len(body) > 60 {
 				body = body[:57] + "..."
 			}
@@ -570,48 +561,6 @@ var jiraIssueCommentListCmd = &cobra.Command{
 	},
 }
 
-// extractCommentBody attempts to extract text from a comment body.
-// If it's ADF (map), it tries to extract text nodes; otherwise returns the string representation.
-func extractCommentBody(body interface{}) string {
-	if body == nil {
-		return ""
-	}
-	switch b := body.(type) {
-	case string:
-		return b
-	case map[string]interface{}:
-		// Try to extract text from ADF
-		return extractADFText(b)
-	default:
-		return "ADF content"
-	}
-}
-
-// extractADFText recursively extracts text from an ADF document.
-func extractADFText(node map[string]interface{}) string {
-	if t, ok := node["type"].(string); ok && t == "text" {
-		if text, ok := node["text"].(string); ok {
-			return text
-		}
-	}
-	content, ok := node["content"].([]interface{})
-	if !ok {
-		return "ADF content"
-	}
-	var parts []string
-	for _, item := range content {
-		if m, ok := item.(map[string]interface{}); ok {
-			text := extractADFText(m)
-			if text != "" && text != "ADF content" {
-				parts = append(parts, text)
-			}
-		}
-	}
-	if len(parts) > 0 {
-		return strings.Join(parts, " ")
-	}
-	return "ADF content"
-}
 
 // --- issue comment add ---
 
@@ -669,7 +618,19 @@ var jiraIssueCommentGetCmd = &cobra.Command{
 			return err
 		}
 
-		return outputJSON(comment)
+		if isJSONOutput(cmd) {
+			return outputJSON(comment)
+		}
+
+		author := ""
+		if comment.Author != nil {
+			author = comment.Author.DisplayName
+		}
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "ID:      %s\n", comment.ID)
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Author:  %s\n", author)
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Created: %s\n", comment.Created)
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Body:\n%s\n", adf.Render(comment.Body))
+		return nil
 	},
 }
 
