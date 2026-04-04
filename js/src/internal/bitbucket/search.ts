@@ -1,0 +1,39 @@
+import { get } from './client.js';
+import type { BitbucketClient, PaginationOptions } from './client.js';
+
+export interface SearchCodeResult {
+  size: number;
+  page?: number;
+  pagelen?: number;
+  next?: string;
+  values: unknown[];
+}
+
+export async function searchCode(client: BitbucketClient, workspace: string, query: string, opts?: PaginationOptions): Promise<SearchCodeResult> {
+  const params = new URLSearchParams();
+  params.set('search_query', query);
+  if (opts?.page !== undefined && opts.page > 0) params.set('page', String(opts.page));
+  if (opts?.pageLen !== undefined && opts.pageLen > 0) params.set('pagelen', String(opts.pageLen));
+  if (!params.has('pagelen')) params.set('pagelen', '50');
+
+  const basePath = `/workspaces/${encodeURIComponent(workspace)}/search/code?${params.toString()}`;
+
+  if (opts?.all) {
+    const allValues: unknown[] = [];
+    let next: string | null = basePath;
+    let totalSize = 0;
+
+    while (next) {
+      const result = await get(client, next);
+      if (Array.isArray(result?.values)) {
+        allValues.push(...result.values);
+      }
+      totalSize = result?.size ?? totalSize;
+      next = result?.next ?? null;
+    }
+
+    return { size: totalSize, values: allValues };
+  }
+
+  return get(client, basePath);
+}
