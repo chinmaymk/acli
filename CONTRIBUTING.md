@@ -81,8 +81,6 @@ All code must pass linting before it can be merged.
 3. Implement the API client logic in the corresponding `internal/<product>/` package.
 4. Add tests for both the command wiring and the API client.
 
-Many commands are currently stubs marked with TODO -- picking one of these up is a great first contribution.
-
 ## Submitting Changes
 
 1. Make sure your code builds, tests pass, and linting is clean:
