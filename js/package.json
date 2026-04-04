@@ -1,0 +1,16 @@
+{
+  "name": "acli",
+  "version": "0.0.1",
+  "description": "Atlassian CLI - manage Jira, Confluence, and Bitbucket from the terminal",
+  "type": "module",
+  "bin": {
+    "acli": "./src/index.js"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node --test src/**/*.test.js"
+  },
+  "dependencies": {
+    "yargs": "^17.7.2"
+  }
+}
