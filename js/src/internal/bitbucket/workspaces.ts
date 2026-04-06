@@ -1,5 +1,5 @@
 import { get, getAll, addPaginationParams } from './client.js';
-import type { BitbucketClient, PaginationOptions } from './client.js';
+import type { BitbucketClient, PaginationOptions, PaginatedResponse } from './client.js';
 import type { Workspace, WorkspaceMember, WorkspacePermission } from './types.js';
 
 export async function listWorkspaces(client: BitbucketClient, opts?: PaginationOptions): Promise<Workspace[]> {
@@ -7,10 +7,10 @@ export async function listWorkspaces(client: BitbucketClient, opts?: PaginationO
   path = addPaginationParams(path, opts);
 
   if (opts?.all) {
-    return getAll(client, path) as Promise<Workspace[]>;
+    return getAll<Workspace>(client, path);
   }
 
-  const page = await get(client, path);
+  const page = await get<PaginatedResponse<Workspace>>(client, path);
   return page.values ?? [];
 }
 
@@ -24,10 +24,10 @@ export async function listWorkspaceMembers(client: BitbucketClient, workspace: s
   path = addPaginationParams(path, opts);
 
   if (opts?.all) {
-    return getAll(client, path) as Promise<WorkspaceMember[]>;
+    return getAll<WorkspaceMember>(client, path);
   }
 
-  const page = await get(client, path);
+  const page = await get<PaginatedResponse<WorkspaceMember>>(client, path);
   return page.values ?? [];
 }
 
@@ -36,9 +36,9 @@ export async function listWorkspacePermissions(client: BitbucketClient, workspac
   path = addPaginationParams(path, opts);
 
   if (opts?.all) {
-    return getAll(client, path) as Promise<WorkspacePermission[]>;
+    return getAll<WorkspacePermission>(client, path);
   }
 
-  const page = await get(client, path);
+  const page = await get<PaginatedResponse<WorkspacePermission>>(client, path);
   return page.values ?? [];
 }

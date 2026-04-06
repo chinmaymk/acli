@@ -1,5 +1,5 @@
 import { get, getRaw, post, deleteNoContent, postNoContent, getAll, addPaginationParams } from './client.js';
-import type { BitbucketClient, PaginationOptions } from './client.js';
+import type { BitbucketClient, PaginationOptions, PaginatedResponse } from './client.js';
 import type { Pipeline, RunPipelineRequest, PipelineStep, PipelineVariable } from './types.js';
 
 export interface ListPipelinesOptions extends PaginationOptions {
@@ -22,10 +22,10 @@ export async function listPipelines(client: BitbucketClient, workspace: string, 
   if (qs) path += '?' + qs;
 
   if (opts?.all) {
-    return getAll(client, path) as Promise<Pipeline[]>;
+    return getAll<Pipeline>(client, path);
   }
 
-  const page = await get(client, path);
+  const page = await get<PaginatedResponse<Pipeline>>(client, path);
   return page.values ?? [];
 }
 
@@ -65,10 +65,10 @@ export async function listPipelineSteps(client: BitbucketClient, workspace: stri
   path = addPaginationParams(path, opts);
 
   if (opts?.all) {
-    return getAll(client, path) as Promise<PipelineStep[]>;
+    return getAll<PipelineStep>(client, path);
   }
 
-  const page = await get(client, path);
+  const page = await get<PaginatedResponse<PipelineStep>>(client, path);
   return page.values ?? [];
 }
 
@@ -87,10 +87,10 @@ export async function listPipelineVariables(client: BitbucketClient, workspace: 
   path = addPaginationParams(path, opts);
 
   if (opts?.all) {
-    return getAll(client, path) as Promise<PipelineVariable[]>;
+    return getAll<PipelineVariable>(client, path);
   }
 
-  const page = await get(client, path);
+  const page = await get<PaginatedResponse<PipelineVariable>>(client, path);
   return page.values ?? [];
 }
 

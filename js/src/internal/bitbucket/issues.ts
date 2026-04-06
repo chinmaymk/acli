@@ -1,5 +1,5 @@
 import { get, post, put, deleteNoContent, getAll, addPaginationParams } from './client.js';
-import type { BitbucketClient, PaginationOptions } from './client.js';
+import type { BitbucketClient, PaginationOptions, PaginatedResponse } from './client.js';
 import type { BBIssue, CreateIssueRequest, UpdateIssueRequest, IssueComment } from './types.js';
 
 export interface ListIssuesOptions extends PaginationOptions {
@@ -21,10 +21,10 @@ export async function listIssues(client: BitbucketClient, workspace: string, rep
   if (qs) path += '?' + qs;
 
   if (opts?.all) {
-    return getAll(client, path) as Promise<BBIssue[]>;
+    return getAll<BBIssue>(client, path);
   }
 
-  const page = await get(client, path);
+  const page = await get<PaginatedResponse<BBIssue>>(client, path);
   return page.values ?? [];
 }
 
@@ -53,10 +53,10 @@ export async function listIssueComments(client: BitbucketClient, workspace: stri
   path = addPaginationParams(path, opts);
 
   if (opts?.all) {
-    return getAll(client, path) as Promise<IssueComment[]>;
+    return getAll<IssueComment>(client, path);
   }
 
-  const page = await get(client, path);
+  const page = await get<PaginatedResponse<IssueComment>>(client, path);
   return page.values ?? [];
 }
 

@@ -12,13 +12,13 @@ export function createClient(baseURL: string, email: string, apiToken: string): 
   };
 }
 
-export async function confluenceV2(
+export async function confluenceV2<T = unknown>(
   client: ConfluenceClient,
   method: string,
   path: string,
   query?: Record<string, string> | null,
   body?: unknown,
-): Promise<any> {
+): Promise<T> {
   let endpoint = client.baseURL + '/wiki/api/v2' + path;
 
   if (query && Object.keys(query).length > 0) {
@@ -56,8 +56,8 @@ export async function confluenceV2(
   }
 
   if (!text) {
-    return null;
+    return null as T;
   }
 
-  return JSON.parse(text);
+  return JSON.parse(text) as T;
 }

@@ -1,5 +1,5 @@
 import { get, getRaw, getAll, addPaginationParams } from './client.js';
-import type { BitbucketClient, PaginationOptions } from './client.js';
+import type { BitbucketClient, PaginationOptions, PaginatedResponse } from './client.js';
 import type { Commit, CommitStatus } from './types.js';
 
 export interface ListCommitsOptions extends PaginationOptions {
@@ -21,10 +21,10 @@ export async function listCommits(client: BitbucketClient, workspace: string, re
   if (qs) path += '?' + qs;
 
   if (opts?.all) {
-    return getAll(client, path) as Promise<Commit[]>;
+    return getAll<Commit>(client, path);
   }
 
-  const page = await get(client, path);
+  const page = await get<PaginatedResponse<Commit>>(client, path);
   return page.values ?? [];
 }
 
@@ -38,10 +38,10 @@ export async function listCommitStatuses(client: BitbucketClient, workspace: str
   path = addPaginationParams(path, opts);
 
   if (opts?.all) {
-    return getAll(client, path) as Promise<CommitStatus[]>;
+    return getAll<CommitStatus>(client, path);
   }
 
-  const page = await get(client, path);
+  const page = await get<PaginatedResponse<CommitStatus>>(client, path);
   return page.values ?? [];
 }
 

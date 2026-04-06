@@ -13,20 +13,20 @@ export async function searchCode(client: BitbucketClient, workspace: string, que
 
   if (opts?.all) {
     const allValues: SearchResponse['values'] = [];
-    let next: string | null = basePath;
+    let nextUrl: string | null = basePath;
     let totalSize = 0;
 
-    while (next) {
-      const result = await get(client, next);
+    while (nextUrl !== null) {
+      const result: SearchResponse = await get<SearchResponse>(client, nextUrl);
       if (Array.isArray(result?.values)) {
         allValues.push(...result.values);
       }
       totalSize = result?.size ?? totalSize;
-      next = result?.next ?? null;
+      nextUrl = result?.next ?? null;
     }
 
     return { size: totalSize, page: 1, pagelen: allValues.length, next: '', values: allValues };
   }
 
-  return get(client, basePath);
+  return get<SearchResponse>(client, basePath);
 }

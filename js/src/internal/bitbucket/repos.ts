@@ -1,5 +1,5 @@
 import { get, post, deleteNoContent, getAll, addPaginationParams } from './client.js';
-import type { BitbucketClient, PaginationOptions } from './client.js';
+import type { BitbucketClient, PaginationOptions, PaginatedResponse } from './client.js';
 import type { Repository, CreateRepoRequest, ForkRepoRequest } from './types.js';
 
 export interface ListRepositoriesOptions extends PaginationOptions {
@@ -23,10 +23,10 @@ export async function listRepositories(client: BitbucketClient, workspace: strin
   if (qs) path += '?' + qs;
 
   if (opts?.all) {
-    return getAll(client, path) as Promise<Repository[]>;
+    return getAll<Repository>(client, path);
   }
 
-  const page = await get(client, path);
+  const page = await get<PaginatedResponse<Repository>>(client, path);
   return page.values ?? [];
 }
 
@@ -57,9 +57,9 @@ export async function listForks(client: BitbucketClient, workspace: string, repo
   path = addPaginationParams(path, opts);
 
   if (opts?.all) {
-    return getAll(client, path) as Promise<Repository[]>;
+    return getAll<Repository>(client, path);
   }
 
-  const page = await get(client, path);
+  const page = await get<PaginatedResponse<Repository>>(client, path);
   return page.values ?? [];
 }

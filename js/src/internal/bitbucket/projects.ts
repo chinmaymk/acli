@@ -1,5 +1,5 @@
 import { get, post, deleteNoContent, getAll, addPaginationParams } from './client.js';
-import type { BitbucketClient, PaginationOptions } from './client.js';
+import type { BitbucketClient, PaginationOptions, PaginatedResponse } from './client.js';
 import type { BBProject, CreateProjectRequest } from './types.js';
 
 export async function listProjects(client: BitbucketClient, workspace: string, opts?: PaginationOptions): Promise<BBProject[]> {
@@ -7,10 +7,10 @@ export async function listProjects(client: BitbucketClient, workspace: string, o
   path = addPaginationParams(path, opts);
 
   if (opts?.all) {
-    return getAll(client, path) as Promise<BBProject[]>;
+    return getAll<BBProject>(client, path);
   }
 
-  const page = await get(client, path);
+  const page = await get<PaginatedResponse<BBProject>>(client, path);
   return page.values ?? [];
 }
 

@@ -1,5 +1,5 @@
 import { get, post, deleteNoContent, getAll, addPaginationParams } from './client.js';
-import type { BitbucketClient, PaginationOptions } from './client.js';
+import type { BitbucketClient, PaginationOptions, PaginatedResponse } from './client.js';
 import type { Environment, CreateEnvironmentRequest } from './types.js';
 
 export async function listEnvironments(client: BitbucketClient, workspace: string, repoSlug: string, opts?: PaginationOptions): Promise<Environment[]> {
@@ -7,10 +7,10 @@ export async function listEnvironments(client: BitbucketClient, workspace: strin
   path = addPaginationParams(path, opts);
 
   if (opts?.all) {
-    return getAll(client, path) as Promise<Environment[]>;
+    return getAll<Environment>(client, path);
   }
 
-  const page = await get(client, path);
+  const page = await get<PaginatedResponse<Environment>>(client, path);
   return page.values ?? [];
 }
 

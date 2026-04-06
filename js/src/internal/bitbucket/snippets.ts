@@ -1,5 +1,5 @@
 import { get, post, deleteNoContent, getAll, addPaginationParams } from './client.js';
-import type { BitbucketClient, PaginationOptions } from './client.js';
+import type { BitbucketClient, PaginationOptions, PaginatedResponse } from './client.js';
 import type { Snippet, CreateSnippetRequest } from './types.js';
 
 export async function listSnippets(client: BitbucketClient, workspace: string, opts?: PaginationOptions): Promise<Snippet[]> {
@@ -7,10 +7,10 @@ export async function listSnippets(client: BitbucketClient, workspace: string, o
   path = addPaginationParams(path, opts);
 
   if (opts?.all) {
-    return getAll(client, path) as Promise<Snippet[]>;
+    return getAll<Snippet>(client, path);
   }
 
-  const page = await get(client, path);
+  const page = await get<PaginatedResponse<Snippet>>(client, path);
   return page.values ?? [];
 }
 

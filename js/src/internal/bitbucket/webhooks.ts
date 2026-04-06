@@ -1,5 +1,5 @@
 import { get, post, put, deleteNoContent, getAll, addPaginationParams } from './client.js';
-import type { BitbucketClient, PaginationOptions } from './client.js';
+import type { BitbucketClient, PaginationOptions, PaginatedResponse } from './client.js';
 import type { BBWebhook, CreateWebhookRequest } from './types.js';
 
 export async function listRepoWebhooks(client: BitbucketClient, workspace: string, repoSlug: string, opts?: PaginationOptions): Promise<BBWebhook[]> {
@@ -7,10 +7,10 @@ export async function listRepoWebhooks(client: BitbucketClient, workspace: strin
   path = addPaginationParams(path, opts);
 
   if (opts?.all) {
-    return getAll(client, path) as Promise<BBWebhook[]>;
+    return getAll<BBWebhook>(client, path);
   }
 
-  const page = await get(client, path);
+  const page = await get<PaginatedResponse<BBWebhook>>(client, path);
   return page.values ?? [];
 }
 
@@ -39,10 +39,10 @@ export async function listWorkspaceWebhooks(client: BitbucketClient, workspace: 
   path = addPaginationParams(path, opts);
 
   if (opts?.all) {
-    return getAll(client, path) as Promise<BBWebhook[]>;
+    return getAll<BBWebhook>(client, path);
   }
 
-  const page = await get(client, path);
+  const page = await get<PaginatedResponse<BBWebhook>>(client, path);
   return page.values ?? [];
 }
 

@@ -1,5 +1,5 @@
 import { get, post, deleteNoContent, getAll, addPaginationParams } from './client.js';
-import type { BitbucketClient, PaginationOptions } from './client.js';
+import type { BitbucketClient, PaginationOptions, PaginatedResponse } from './client.js';
 import type { BranchRestriction, CreateBranchRestrictionRequest } from './types.js';
 
 export async function listBranchRestrictions(client: BitbucketClient, workspace: string, repoSlug: string, opts?: PaginationOptions): Promise<BranchRestriction[]> {
@@ -7,10 +7,10 @@ export async function listBranchRestrictions(client: BitbucketClient, workspace:
   path = addPaginationParams(path, opts);
 
   if (opts?.all) {
-    return getAll(client, path) as Promise<BranchRestriction[]>;
+    return getAll<BranchRestriction>(client, path);
   }
 
-  const page = await get(client, path);
+  const page = await get<PaginatedResponse<BranchRestriction>>(client, path);
   return page.values ?? [];
 }
 

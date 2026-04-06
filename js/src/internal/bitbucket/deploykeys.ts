@@ -1,5 +1,5 @@
 import { get, post, deleteNoContent, getAll, addPaginationParams } from './client.js';
-import type { BitbucketClient, PaginationOptions } from './client.js';
+import type { BitbucketClient, PaginationOptions, PaginatedResponse } from './client.js';
 import type { DeployKey, CreateDeployKeyRequest } from './types.js';
 
 export async function listDeployKeys(client: BitbucketClient, workspace: string, repoSlug: string, opts?: PaginationOptions): Promise<DeployKey[]> {
@@ -7,10 +7,10 @@ export async function listDeployKeys(client: BitbucketClient, workspace: string,
   path = addPaginationParams(path, opts);
 
   if (opts?.all) {
-    return getAll(client, path) as Promise<DeployKey[]>;
+    return getAll<DeployKey>(client, path);
   }
 
-  const page = await get(client, path);
+  const page = await get<PaginatedResponse<DeployKey>>(client, path);
   return page.values ?? [];
 }
 
