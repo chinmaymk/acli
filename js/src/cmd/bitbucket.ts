@@ -315,8 +315,8 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   const pr = await bbPRs.createPullRequest(client, workspace, repoSlug, {
                     title: argv.title,
                     description: argv.description,
-                    sourceBranch: argv.source,
-                    destinationBranch: argv.destination,
+                    source_branch: argv.source,
+                    destination_branch: argv.destination,
                     close_source_branch: argv['close-source-branch'],
                   });
                   outputResult(argv, 'created', String(pr.id), `Created PR #${pr.id}: ${pr.title}`, pr);

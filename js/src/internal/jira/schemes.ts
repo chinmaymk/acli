@@ -1,5 +1,29 @@
 import { get, post, put, del, deleteWithBody } from './client.js';
 import type { JiraClient } from './client.js';
+import type {
+  Dashboard,
+  DashboardList,
+  DashboardGadget,
+  DashboardGadgetList,
+  Field,
+  FieldContext,
+  FieldConfiguration,
+  FieldConfigurationScheme,
+  IssueSecurityScheme,
+  IssueTypeScheme,
+  IssueTypeScreenScheme,
+  NotificationScheme,
+  PageBean,
+  PermissionScheme,
+  ProjectRole,
+  Screen,
+  ScreenField,
+  ScreenScheme,
+  ScreenTab,
+  Webhook,
+  Workflow,
+  WorkflowScheme,
+} from './types.js';
 
 // --- Dashboards ---
 
@@ -10,7 +34,7 @@ export async function getDashboards(
   client: JiraClient,
   startAt: number,
   maxResults: number,
-): Promise<any> {
+): Promise<DashboardList> {
   return get(client, '/rest/api/3/dashboard', {
     startAt: String(startAt),
     maxResults: String(maxResults),
@@ -20,14 +44,14 @@ export async function getDashboards(
 /**
  * Creates a new dashboard.
  */
-export async function createDashboard(client: JiraClient, dashboard: unknown): Promise<any> {
+export async function createDashboard(client: JiraClient, dashboard: Partial<Dashboard>): Promise<Dashboard> {
   return post(client, '/rest/api/3/dashboard', dashboard);
 }
 
 /**
  * Returns a dashboard by ID.
  */
-export async function getDashboard(client: JiraClient, id: string): Promise<any> {
+export async function getDashboard(client: JiraClient, id: string): Promise<Dashboard> {
   return get(client, `/rest/api/3/dashboard/${id}`);
 }
 
@@ -37,8 +61,8 @@ export async function getDashboard(client: JiraClient, id: string): Promise<any>
 export async function updateDashboard(
   client: JiraClient,
   id: string,
-  dashboard: unknown,
-): Promise<any> {
+  dashboard: Partial<Dashboard>,
+): Promise<Dashboard> {
   return put(client, `/rest/api/3/dashboard/${id}`, dashboard);
 }
 
@@ -55,8 +79,8 @@ export async function deleteDashboard(client: JiraClient, id: string): Promise<v
 export async function copyDashboard(
   client: JiraClient,
   id: string,
-  dashboard: unknown,
-): Promise<any> {
+  dashboard: Partial<Dashboard>,
+): Promise<Dashboard> {
   return post(client, `/rest/api/3/dashboard/${id}/copy`, dashboard);
 }
 
@@ -68,7 +92,7 @@ export async function searchDashboards(
   name: string,
   startAt: number,
   maxResults: number,
-): Promise<any> {
+): Promise<PageBean<Dashboard>> {
   const query: Record<string, string | number> = { startAt, maxResults };
   if (name) query.dashboardName = name;
   return get(client, '/rest/api/3/dashboard/search', query as Record<string, string>);
@@ -77,7 +101,7 @@ export async function searchDashboards(
 /**
  * Returns the gadgets on a dashboard.
  */
-export async function getDashboardGadgets(client: JiraClient, dashboardId: string): Promise<any> {
+export async function getDashboardGadgets(client: JiraClient, dashboardId: string): Promise<DashboardGadgetList> {
   return get(client, `/rest/api/3/dashboard/${dashboardId}/gadget`);
 }
 
@@ -87,8 +111,8 @@ export async function getDashboardGadgets(client: JiraClient, dashboardId: strin
 export async function addDashboardGadget(
   client: JiraClient,
   dashboardId: string,
-  gadget: unknown,
-): Promise<any> {
+  gadget: Partial<DashboardGadget>,
+): Promise<DashboardGadget> {
   return post(client, `/rest/api/3/dashboard/${dashboardId}/gadget`, gadget);
 }
 
@@ -99,8 +123,8 @@ export async function updateDashboardGadget(
   client: JiraClient,
   dashboardId: string,
   gadgetId: string,
-  gadget: unknown,
-): Promise<any> {
+  gadget: Partial<DashboardGadget>,
+): Promise<void> {
   return put(client, `/rest/api/3/dashboard/${dashboardId}/gadget/${gadgetId}`, gadget);
 }
 
@@ -120,14 +144,14 @@ export async function removeDashboardGadget(
 /**
  * Returns all fields.
  */
-export async function getFields(client: JiraClient): Promise<any> {
+export async function getFields(client: JiraClient): Promise<Field[]> {
   return get(client, '/rest/api/3/field');
 }
 
 /**
  * Creates a custom field.
  */
-export async function createCustomField(client: JiraClient, field: unknown): Promise<any> {
+export async function createCustomField(client: JiraClient, field: Partial<Field>): Promise<Field> {
   return post(client, '/rest/api/3/field', field);
 }
 
@@ -137,8 +161,8 @@ export async function createCustomField(client: JiraClient, field: unknown): Pro
 export async function updateCustomField(
   client: JiraClient,
   fieldId: string,
-  field: unknown,
-): Promise<any> {
+  field: Partial<Field>,
+): Promise<void> {
   return put(client, `/rest/api/3/field/${fieldId}`, field);
 }
 
@@ -157,7 +181,7 @@ export async function searchFields(
   query: string,
   startAt: number,
   maxResults: number,
-): Promise<any> {
+): Promise<PageBean<Field>> {
   const params: Record<string, string | number> = { startAt, maxResults };
   if (query) params.query = query;
   return get(client, '/rest/api/3/field/search', params as Record<string, string>);
@@ -171,7 +195,7 @@ export async function getFieldContexts(
   fieldId: string,
   startAt: number,
   maxResults: number,
-): Promise<any> {
+): Promise<PageBean<FieldContext>> {
   return get(client, `/rest/api/3/field/${fieldId}/context`, {
     startAt: String(startAt),
     maxResults: String(maxResults),
@@ -181,14 +205,14 @@ export async function getFieldContexts(
 /**
  * Moves a custom field to trash.
  */
-export async function trashCustomField(client: JiraClient, id: string): Promise<any> {
+export async function trashCustomField(client: JiraClient, id: string): Promise<void> {
   return post(client, `/rest/api/3/field/${id}/trash`, null);
 }
 
 /**
  * Restores a custom field from trash.
  */
-export async function restoreCustomField(client: JiraClient, id: string): Promise<any> {
+export async function restoreCustomField(client: JiraClient, id: string): Promise<void> {
   return post(client, `/rest/api/3/field/${id}/restore`, null);
 }
 
@@ -199,7 +223,7 @@ export async function getTrashedFields(
   client: JiraClient,
   startAt: number,
   maxResults: number,
-): Promise<any> {
+): Promise<PageBean<Field>> {
   return get(client, '/rest/api/3/field/search/trashed', {
     startAt: String(startAt),
     maxResults: String(maxResults),
@@ -215,7 +239,7 @@ export async function getScreens(
   client: JiraClient,
   startAt: number,
   maxResults: number,
-): Promise<any> {
+): Promise<PageBean<Screen>> {
   return get(client, '/rest/api/3/screens', {
     startAt: String(startAt),
     maxResults: String(maxResults),
@@ -225,7 +249,7 @@ export async function getScreens(
 /**
  * Creates a screen.
  */
-export async function createScreen(client: JiraClient, screen: unknown): Promise<any> {
+export async function createScreen(client: JiraClient, screen: Partial<Screen>): Promise<Screen> {
   return post(client, '/rest/api/3/screens', screen);
 }
 
@@ -235,8 +259,8 @@ export async function createScreen(client: JiraClient, screen: unknown): Promise
 export async function updateScreen(
   client: JiraClient,
   screenId: number,
-  screen: unknown,
-): Promise<any> {
+  screen: Partial<Screen>,
+): Promise<Screen> {
   return put(client, `/rest/api/3/screens/${screenId}`, screen);
 }
 
@@ -250,7 +274,7 @@ export async function deleteScreen(client: JiraClient, screenId: number): Promis
 /**
  * Returns the tabs for a screen.
  */
-export async function getScreenTabs(client: JiraClient, screenId: number): Promise<any> {
+export async function getScreenTabs(client: JiraClient, screenId: number): Promise<ScreenTab[]> {
   return get(client, `/rest/api/3/screens/${screenId}/tabs`);
 }
 
@@ -260,8 +284,8 @@ export async function getScreenTabs(client: JiraClient, screenId: number): Promi
 export async function createScreenTab(
   client: JiraClient,
   screenId: number,
-  tab: unknown,
-): Promise<any> {
+  tab: Partial<ScreenTab>,
+): Promise<ScreenTab> {
   return post(client, `/rest/api/3/screens/${screenId}/tabs`, tab);
 }
 
@@ -272,8 +296,8 @@ export async function updateScreenTab(
   client: JiraClient,
   screenId: number,
   tabId: number,
-  tab: unknown,
-): Promise<any> {
+  tab: Partial<ScreenTab>,
+): Promise<ScreenTab> {
   return put(client, `/rest/api/3/screens/${screenId}/tabs/${tabId}`, tab);
 }
 
@@ -295,7 +319,7 @@ export async function getScreenTabFields(
   client: JiraClient,
   screenId: number,
   tabId: number,
-): Promise<any> {
+): Promise<ScreenField[]> {
   return get(client, `/rest/api/3/screens/${screenId}/tabs/${tabId}/fields`);
 }
 
@@ -307,7 +331,7 @@ export async function addScreenTabField(
   screenId: number,
   tabId: number,
   fieldId: string,
-): Promise<any> {
+): Promise<ScreenField> {
   return post(client, `/rest/api/3/screens/${screenId}/tabs/${tabId}/fields`, { fieldId });
 }
 
@@ -332,7 +356,7 @@ export async function getScreenSchemes(
   client: JiraClient,
   startAt: number,
   maxResults: number,
-): Promise<any> {
+): Promise<PageBean<ScreenScheme>> {
   return get(client, '/rest/api/3/screenscheme', {
     startAt: String(startAt),
     maxResults: String(maxResults),
@@ -342,7 +366,7 @@ export async function getScreenSchemes(
 /**
  * Creates a screen scheme.
  */
-export async function createScreenScheme(client: JiraClient, scheme: unknown): Promise<any> {
+export async function createScreenScheme(client: JiraClient, scheme: Partial<ScreenScheme>): Promise<ScreenScheme> {
   return post(client, '/rest/api/3/screenscheme', scheme);
 }
 
@@ -352,8 +376,8 @@ export async function createScreenScheme(client: JiraClient, scheme: unknown): P
 export async function updateScreenScheme(
   client: JiraClient,
   id: number,
-  scheme: unknown,
-): Promise<any> {
+  scheme: Partial<ScreenScheme>,
+): Promise<void> {
   return put(client, `/rest/api/3/screenscheme/${id}`, scheme);
 }
 
@@ -369,7 +393,7 @@ export async function deleteScreenScheme(client: JiraClient, id: number): Promis
 /**
  * Returns all workflows.
  */
-export async function getWorkflows(client: JiraClient): Promise<any> {
+export async function getWorkflows(client: JiraClient): Promise<Workflow[]> {
   return get(client, '/rest/api/3/workflow');
 }
 
@@ -381,7 +405,7 @@ export async function searchWorkflows(
   query: string,
   startAt: number,
   maxResults: number,
-): Promise<any> {
+): Promise<PageBean<Workflow>> {
   const params: Record<string, string | number> = { startAt, maxResults };
   if (query) params.queryString = query;
   return get(client, '/rest/api/3/workflow/search', params as Record<string, string>);
@@ -396,7 +420,7 @@ export async function getWorkflowSchemes(
   client: JiraClient,
   startAt: number,
   maxResults: number,
-): Promise<any> {
+): Promise<PageBean<WorkflowScheme>> {
   return get(client, '/rest/api/3/workflowscheme', {
     startAt: String(startAt),
     maxResults: String(maxResults),
@@ -406,14 +430,14 @@ export async function getWorkflowSchemes(
 /**
  * Creates a workflow scheme.
  */
-export async function createWorkflowScheme(client: JiraClient, scheme: unknown): Promise<any> {
+export async function createWorkflowScheme(client: JiraClient, scheme: Partial<WorkflowScheme>): Promise<WorkflowScheme> {
   return post(client, '/rest/api/3/workflowscheme', scheme);
 }
 
 /**
  * Returns a workflow scheme by ID.
  */
-export async function getWorkflowScheme(client: JiraClient, id: number): Promise<any> {
+export async function getWorkflowScheme(client: JiraClient, id: number): Promise<WorkflowScheme> {
   return get(client, `/rest/api/3/workflowscheme/${id}`);
 }
 
@@ -423,8 +447,8 @@ export async function getWorkflowScheme(client: JiraClient, id: number): Promise
 export async function updateWorkflowScheme(
   client: JiraClient,
   id: number,
-  scheme: unknown,
-): Promise<any> {
+  scheme: Partial<WorkflowScheme>,
+): Promise<WorkflowScheme> {
   return put(client, `/rest/api/3/workflowscheme/${id}`, scheme);
 }
 
@@ -444,7 +468,7 @@ export async function getIssueTypeSchemes(
   client: JiraClient,
   startAt: number,
   maxResults: number,
-): Promise<any> {
+): Promise<PageBean<IssueTypeScheme>> {
   return get(client, '/rest/api/3/issuetypescheme', {
     startAt: String(startAt),
     maxResults: String(maxResults),
@@ -454,7 +478,7 @@ export async function getIssueTypeSchemes(
 /**
  * Creates an issue type scheme.
  */
-export async function createIssueTypeScheme(client: JiraClient, scheme: unknown): Promise<any> {
+export async function createIssueTypeScheme(client: JiraClient, scheme: Partial<IssueTypeScheme>): Promise<IssueTypeScheme> {
   return post(client, '/rest/api/3/issuetypescheme', scheme);
 }
 
@@ -464,8 +488,8 @@ export async function createIssueTypeScheme(client: JiraClient, scheme: unknown)
 export async function updateIssueTypeScheme(
   client: JiraClient,
   id: string,
-  scheme: unknown,
-): Promise<any> {
+  scheme: Partial<IssueTypeScheme>,
+): Promise<void> {
   return put(client, `/rest/api/3/issuetypescheme/${id}`, scheme);
 }
 
@@ -485,7 +509,7 @@ export async function getIssueTypeScreenSchemes(
   client: JiraClient,
   startAt: number,
   maxResults: number,
-): Promise<any> {
+): Promise<PageBean<IssueTypeScreenScheme>> {
   return get(client, '/rest/api/3/issuetypescreenscheme', {
     startAt: String(startAt),
     maxResults: String(maxResults),
@@ -497,8 +521,8 @@ export async function getIssueTypeScreenSchemes(
  */
 export async function createIssueTypeScreenScheme(
   client: JiraClient,
-  scheme: unknown,
-): Promise<any> {
+  scheme: Partial<IssueTypeScreenScheme>,
+): Promise<IssueTypeScreenScheme> {
   return post(client, '/rest/api/3/issuetypescreenscheme', scheme);
 }
 
@@ -508,8 +532,8 @@ export async function createIssueTypeScreenScheme(
 export async function updateIssueTypeScreenScheme(
   client: JiraClient,
   id: string,
-  scheme: unknown,
-): Promise<any> {
+  scheme: Partial<IssueTypeScreenScheme>,
+): Promise<void> {
   return put(client, `/rest/api/3/issuetypescreenscheme/${id}`, scheme);
 }
 
@@ -532,7 +556,7 @@ export async function getFieldConfigurations(
   client: JiraClient,
   startAt: number,
   maxResults: number,
-): Promise<any> {
+): Promise<PageBean<FieldConfiguration>> {
   return get(client, '/rest/api/3/fieldconfiguration', {
     startAt: String(startAt),
     maxResults: String(maxResults),
@@ -544,8 +568,8 @@ export async function getFieldConfigurations(
  */
 export async function createFieldConfiguration(
   client: JiraClient,
-  config: unknown,
-): Promise<any> {
+  config: Partial<FieldConfiguration>,
+): Promise<FieldConfiguration> {
   return post(client, '/rest/api/3/fieldconfiguration', config);
 }
 
@@ -555,8 +579,8 @@ export async function createFieldConfiguration(
 export async function updateFieldConfiguration(
   client: JiraClient,
   id: number,
-  config: unknown,
-): Promise<any> {
+  config: Partial<FieldConfiguration>,
+): Promise<void> {
   return put(client, `/rest/api/3/fieldconfiguration/${id}`, config);
 }
 
@@ -576,7 +600,7 @@ export async function getFieldConfigurationSchemes(
   client: JiraClient,
   startAt: number,
   maxResults: number,
-): Promise<any> {
+): Promise<PageBean<FieldConfigurationScheme>> {
   return get(client, '/rest/api/3/fieldconfigurationscheme', {
     startAt: String(startAt),
     maxResults: String(maxResults),
@@ -588,8 +612,8 @@ export async function getFieldConfigurationSchemes(
  */
 export async function createFieldConfigurationScheme(
   client: JiraClient,
-  scheme: unknown,
-): Promise<any> {
+  scheme: Partial<FieldConfigurationScheme>,
+): Promise<FieldConfigurationScheme> {
   return post(client, '/rest/api/3/fieldconfigurationscheme', scheme);
 }
 
@@ -599,8 +623,8 @@ export async function createFieldConfigurationScheme(
 export async function updateFieldConfigurationScheme(
   client: JiraClient,
   id: string,
-  scheme: unknown,
-): Promise<any> {
+  scheme: Partial<FieldConfigurationScheme>,
+): Promise<void> {
   return put(client, `/rest/api/3/fieldconfigurationscheme/${id}`, scheme);
 }
 
@@ -619,7 +643,7 @@ export async function deleteFieldConfigurationScheme(
 /**
  * Returns all permission schemes.
  */
-export async function getPermissionSchemes(client: JiraClient): Promise<any[]> {
+export async function getPermissionSchemes(client: JiraClient): Promise<PermissionScheme[]> {
   const result = await get(client, '/rest/api/3/permissionscheme');
   return result.permissionSchemes;
 }
@@ -627,14 +651,14 @@ export async function getPermissionSchemes(client: JiraClient): Promise<any[]> {
 /**
  * Creates a permission scheme.
  */
-export async function createPermissionScheme(client: JiraClient, scheme: unknown): Promise<any> {
+export async function createPermissionScheme(client: JiraClient, scheme: Partial<PermissionScheme>): Promise<PermissionScheme> {
   return post(client, '/rest/api/3/permissionscheme', scheme);
 }
 
 /**
  * Returns a permission scheme by ID.
  */
-export async function getPermissionScheme(client: JiraClient, id: number): Promise<any> {
+export async function getPermissionScheme(client: JiraClient, id: number): Promise<PermissionScheme> {
   return get(client, `/rest/api/3/permissionscheme/${id}`);
 }
 
@@ -644,8 +668,8 @@ export async function getPermissionScheme(client: JiraClient, id: number): Promi
 export async function updatePermissionScheme(
   client: JiraClient,
   id: number,
-  scheme: unknown,
-): Promise<any> {
+  scheme: Partial<PermissionScheme>,
+): Promise<PermissionScheme> {
   return put(client, `/rest/api/3/permissionscheme/${id}`, scheme);
 }
 
@@ -665,7 +689,7 @@ export async function getNotificationSchemes(
   client: JiraClient,
   startAt: number,
   maxResults: number,
-): Promise<any> {
+): Promise<PageBean<NotificationScheme>> {
   return get(client, '/rest/api/3/notificationscheme', {
     startAt: String(startAt),
     maxResults: String(maxResults),
@@ -677,15 +701,15 @@ export async function getNotificationSchemes(
  */
 export async function createNotificationScheme(
   client: JiraClient,
-  scheme: unknown,
-): Promise<any> {
+  scheme: Partial<NotificationScheme>,
+): Promise<NotificationScheme> {
   return post(client, '/rest/api/3/notificationscheme', scheme);
 }
 
 /**
  * Returns a notification scheme by ID.
  */
-export async function getNotificationScheme(client: JiraClient, id: number): Promise<any> {
+export async function getNotificationScheme(client: JiraClient, id: number): Promise<NotificationScheme> {
   return get(client, `/rest/api/3/notificationscheme/${id}`);
 }
 
@@ -695,8 +719,8 @@ export async function getNotificationScheme(client: JiraClient, id: number): Pro
 export async function updateNotificationScheme(
   client: JiraClient,
   id: number,
-  scheme: unknown,
-): Promise<any> {
+  scheme: Partial<NotificationScheme>,
+): Promise<void> {
   return put(client, `/rest/api/3/notificationscheme/${id}`, scheme);
 }
 
@@ -712,7 +736,7 @@ export async function deleteNotificationScheme(client: JiraClient, id: number): 
 /**
  * Returns all issue security schemes.
  */
-export async function getIssueSecuritySchemes(client: JiraClient): Promise<any[]> {
+export async function getIssueSecuritySchemes(client: JiraClient): Promise<IssueSecurityScheme[]> {
   const result = await get(client, '/rest/api/3/issuesecurityschemes');
   return result.issueSecuritySchemes;
 }
@@ -722,15 +746,15 @@ export async function getIssueSecuritySchemes(client: JiraClient): Promise<any[]
  */
 export async function createIssueSecurityScheme(
   client: JiraClient,
-  scheme: unknown,
-): Promise<any> {
+  scheme: Partial<IssueSecurityScheme>,
+): Promise<IssueSecurityScheme> {
   return post(client, '/rest/api/3/issuesecurityschemes', scheme);
 }
 
 /**
  * Returns an issue security scheme by ID.
  */
-export async function getIssueSecurityScheme(client: JiraClient, id: number): Promise<any> {
+export async function getIssueSecurityScheme(client: JiraClient, id: number): Promise<IssueSecurityScheme> {
   return get(client, `/rest/api/3/issuesecurityschemes/${id}`);
 }
 
@@ -740,8 +764,8 @@ export async function getIssueSecurityScheme(client: JiraClient, id: number): Pr
 export async function updateIssueSecurityScheme(
   client: JiraClient,
   id: number,
-  scheme: unknown,
-): Promise<any> {
+  scheme: Partial<IssueSecurityScheme>,
+): Promise<void> {
   return put(client, `/rest/api/3/issuesecurityschemes/${id}`, scheme);
 }
 
@@ -757,28 +781,28 @@ export async function deleteIssueSecurityScheme(client: JiraClient, id: number):
 /**
  * Returns all project roles.
  */
-export async function getAllRoles(client: JiraClient): Promise<any> {
+export async function getAllRoles(client: JiraClient): Promise<ProjectRole[]> {
   return get(client, '/rest/api/3/role');
 }
 
 /**
  * Creates a project role.
  */
-export async function createRole(client: JiraClient, role: unknown): Promise<any> {
+export async function createRole(client: JiraClient, role: Partial<ProjectRole>): Promise<ProjectRole> {
   return post(client, '/rest/api/3/role', role);
 }
 
 /**
  * Returns a project role by ID.
  */
-export async function getRole(client: JiraClient, id: number): Promise<any> {
+export async function getRole(client: JiraClient, id: number): Promise<ProjectRole> {
   return get(client, `/rest/api/3/role/${id}`);
 }
 
 /**
  * Updates a project role.
  */
-export async function updateRole(client: JiraClient, id: number, role: unknown): Promise<any> {
+export async function updateRole(client: JiraClient, id: number, role: Partial<ProjectRole>): Promise<ProjectRole> {
   return put(client, `/rest/api/3/role/${id}`, role);
 }
 
@@ -798,7 +822,7 @@ export async function getWebhooks(
   client: JiraClient,
   startAt: number,
   maxResults: number,
-): Promise<any> {
+): Promise<PageBean<Webhook>> {
   return get(client, '/rest/api/3/webhook', {
     startAt: String(startAt),
     maxResults: String(maxResults),
@@ -808,7 +832,7 @@ export async function getWebhooks(
 /**
  * Registers webhooks.
  */
-export async function registerWebhooks(client: JiraClient, webhooks: unknown): Promise<any[]> {
+export async function registerWebhooks(client: JiraClient, webhooks: Record<string, unknown>): Promise<Webhook[]> {
   const result = await post(client, '/rest/api/3/webhook', webhooks);
   return result.webhookRegistrationResult;
 }
@@ -816,6 +840,6 @@ export async function registerWebhooks(client: JiraClient, webhooks: unknown): P
 /**
  * Deletes webhooks by IDs.
  */
-export async function deleteWebhooks(client: JiraClient, webhookIds: number[]): Promise<any> {
+export async function deleteWebhooks(client: JiraClient, webhookIds: number[]): Promise<void> {
   return deleteWithBody(client, '/rest/api/3/webhook', { webhookIds });
 }

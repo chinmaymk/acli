@@ -1,13 +1,34 @@
 import { get, post, put, del, uploadFile } from './client.js';
 import type { JiraClient } from './client.js';
+import type {
+  Attachment,
+  BulkIssueCreateRequest,
+  BulkIssueCreateResponse,
+  ChangelogPage,
+  Comment,
+  CommentPage,
+  CreateMeta,
+  CreatedIssue,
+  EntityProperty,
+  IssueDetailed,
+  IssueNotifyRequest,
+  IssueUpdateDetails,
+  RemoteLink,
+  TransitionsResponse,
+  Visibility,
+  Votes,
+  Watches,
+  Worklog,
+  WorklogPage,
+} from './types.js';
 
 // createIssue creates a new Jira issue.
-export async function createIssue(client: JiraClient, details: unknown): Promise<any> {
+export async function createIssue(client: JiraClient, details: IssueUpdateDetails): Promise<CreatedIssue> {
   return await post(client, '/rest/api/3/issue', details);
 }
 
 // bulkCreateIssues creates multiple issues in a single request.
-export async function bulkCreateIssues(client: JiraClient, req: unknown): Promise<any> {
+export async function bulkCreateIssues(client: JiraClient, req: BulkIssueCreateRequest): Promise<BulkIssueCreateResponse> {
   return await post(client, '/rest/api/3/issue/bulk', req);
 }
 
@@ -17,7 +38,7 @@ export async function getIssue(
   issueIdOrKey: string,
   fields?: string[],
   expand?: string[],
-): Promise<any> {
+): Promise<IssueDetailed> {
   const query: Record<string, string> = {};
   if (fields && fields.length > 0) {
     query.fields = fields.join(',');
@@ -32,9 +53,9 @@ export async function getIssue(
 export async function editIssue(
   client: JiraClient,
   issueIdOrKey: string,
-  details: unknown,
+  details: IssueUpdateDetails,
   notifyUsers?: boolean,
-): Promise<any> {
+): Promise<void> {
   const query: Record<string, string> = {};
   if (!notifyUsers) {
     query.notifyUsers = 'false';
@@ -65,7 +86,7 @@ export async function assignIssue(
   client: JiraClient,
   issueIdOrKey: string,
   accountID: string,
-): Promise<any> {
+): Promise<void> {
   const body = { accountId: accountID };
   return await put(client, `/rest/api/3/issue/${issueIdOrKey}/assignee`, body);
 }
@@ -76,7 +97,7 @@ export async function getIssueChangelog(
   issueIdOrKey: string,
   startAt: number,
   maxResults: number,
-): Promise<any> {
+): Promise<ChangelogPage> {
   const query: Record<string, string> = {
     startAt: String(startAt),
     maxResults: String(maxResults),
@@ -90,7 +111,7 @@ export async function getIssueComments(
   issueIdOrKey: string,
   startAt: number,
   maxResults: number,
-): Promise<any> {
+): Promise<CommentPage> {
   const query: Record<string, string> = {
     startAt: String(startAt),
     maxResults: String(maxResults),
@@ -103,8 +124,8 @@ export async function addIssueComment(
   client: JiraClient,
   issueIdOrKey: string,
   body: unknown,
-  visibility?: unknown,
-): Promise<any> {
+  visibility?: Visibility | undefined,
+): Promise<Comment> {
   const reqBody: Record<string, unknown> = { body };
   if (visibility != null) {
     reqBody.visibility = visibility;
@@ -117,7 +138,7 @@ export async function getIssueComment(
   client: JiraClient,
   issueIdOrKey: string,
   commentId: string,
-): Promise<any> {
+): Promise<Comment> {
   return await get(client, `/rest/api/3/issue/${issueIdOrKey}/comment/${commentId}`);
 }
 
@@ -127,8 +148,8 @@ export async function updateIssueComment(
   issueIdOrKey: string,
   commentId: string,
   body: unknown,
-  visibility?: unknown,
-): Promise<any> {
+  visibility?: Visibility | undefined,
+): Promise<Comment> {
   const reqBody: Record<string, unknown> = { body };
   if (visibility != null) {
     reqBody.visibility = visibility;
@@ -146,7 +167,7 @@ export async function deleteIssueComment(
 }
 
 // getIssueTransitions returns the available transitions for an issue.
-export async function getIssueTransitions(client: JiraClient, issueIdOrKey: string): Promise<any> {
+export async function getIssueTransitions(client: JiraClient, issueIdOrKey: string): Promise<TransitionsResponse> {
   return await get(client, `/rest/api/3/issue/${issueIdOrKey}/transitions`);
 }
 
@@ -154,18 +175,18 @@ export async function getIssueTransitions(client: JiraClient, issueIdOrKey: stri
 export async function doIssueTransition(
   client: JiraClient,
   issueIdOrKey: string,
-  details: unknown,
-): Promise<any> {
+  details: IssueUpdateDetails,
+): Promise<void> {
   return await post(client, `/rest/api/3/issue/${issueIdOrKey}/transitions`, details);
 }
 
 // getIssueVotes returns the votes for an issue.
-export async function getIssueVotes(client: JiraClient, issueIdOrKey: string): Promise<any> {
+export async function getIssueVotes(client: JiraClient, issueIdOrKey: string): Promise<Votes> {
   return await get(client, `/rest/api/3/issue/${issueIdOrKey}/votes`);
 }
 
 // addIssueVote adds a vote to an issue for the authenticated user.
-export async function addIssueVote(client: JiraClient, issueIdOrKey: string): Promise<any> {
+export async function addIssueVote(client: JiraClient, issueIdOrKey: string): Promise<void> {
   return await post(client, `/rest/api/3/issue/${issueIdOrKey}/votes`, null);
 }
 
@@ -175,7 +196,7 @@ export async function removeIssueVote(client: JiraClient, issueIdOrKey: string):
 }
 
 // getIssueWatchers returns the watchers for an issue.
-export async function getIssueWatchers(client: JiraClient, issueIdOrKey: string): Promise<any> {
+export async function getIssueWatchers(client: JiraClient, issueIdOrKey: string): Promise<Watches> {
   return await get(client, `/rest/api/3/issue/${issueIdOrKey}/watchers`);
 }
 
@@ -185,7 +206,7 @@ export async function addIssueWatcher(
   client: JiraClient,
   issueIdOrKey: string,
   accountID: string,
-): Promise<any> {
+): Promise<void> {
   return await post(client, `/rest/api/3/issue/${issueIdOrKey}/watchers`, JSON.stringify(accountID));
 }
 
@@ -205,7 +226,7 @@ export async function getIssueWorklogs(
   issueIdOrKey: string,
   startAt: number,
   maxResults: number,
-): Promise<any> {
+): Promise<WorklogPage> {
   const query: Record<string, string> = {
     startAt: String(startAt),
     maxResults: String(maxResults),
@@ -217,8 +238,8 @@ export async function getIssueWorklogs(
 export async function addIssueWorklog(
   client: JiraClient,
   issueIdOrKey: string,
-  worklog: unknown,
-): Promise<any> {
+  worklog: Partial<Worklog>,
+): Promise<Worklog> {
   return await post(client, `/rest/api/3/issue/${issueIdOrKey}/worklog`, worklog);
 }
 
@@ -227,7 +248,7 @@ export async function getIssueWorklog(
   client: JiraClient,
   issueIdOrKey: string,
   worklogId: string,
-): Promise<any> {
+): Promise<Worklog> {
   return await get(client, `/rest/api/3/issue/${issueIdOrKey}/worklog/${worklogId}`);
 }
 
@@ -236,8 +257,8 @@ export async function updateIssueWorklog(
   client: JiraClient,
   issueIdOrKey: string,
   worklogId: string,
-  worklog: unknown,
-): Promise<any> {
+  worklog: Partial<Worklog>,
+): Promise<Worklog> {
   return await put(client, `/rest/api/3/issue/${issueIdOrKey}/worklog/${worklogId}`, worklog);
 }
 
@@ -255,12 +276,12 @@ export async function addIssueAttachment(
   client: JiraClient,
   issueIdOrKey: string,
   filePath: string,
-): Promise<any> {
+): Promise<Attachment[]> {
   return await uploadFile(client, `/rest/api/3/issue/${issueIdOrKey}/attachments`, 'file', filePath);
 }
 
 // getIssueRemoteLinks returns the remote links for an issue.
-export async function getIssueRemoteLinks(client: JiraClient, issueIdOrKey: string): Promise<any> {
+export async function getIssueRemoteLinks(client: JiraClient, issueIdOrKey: string): Promise<RemoteLink[]> {
   return await get(client, `/rest/api/3/issue/${issueIdOrKey}/remotelink`);
 }
 
@@ -269,7 +290,7 @@ export async function createIssueRemoteLink(
   client: JiraClient,
   issueIdOrKey: string,
   link: unknown,
-): Promise<any> {
+): Promise<RemoteLink> {
   return await post(client, `/rest/api/3/issue/${issueIdOrKey}/remotelink`, link);
 }
 
@@ -278,7 +299,7 @@ export async function getIssueRemoteLink(
   client: JiraClient,
   issueIdOrKey: string,
   linkId: string,
-): Promise<any> {
+): Promise<RemoteLink> {
   return await get(client, `/rest/api/3/issue/${issueIdOrKey}/remotelink/${linkId}`);
 }
 
@@ -288,7 +309,7 @@ export async function updateIssueRemoteLink(
   issueIdOrKey: string,
   linkId: string,
   link: unknown,
-): Promise<any> {
+): Promise<RemoteLink> {
   return await put(client, `/rest/api/3/issue/${issueIdOrKey}/remotelink/${linkId}`, link);
 }
 
@@ -305,13 +326,13 @@ export async function deleteIssueRemoteLink(
 export async function notifyIssue(
   client: JiraClient,
   issueIdOrKey: string,
-  notify: unknown,
-): Promise<any> {
+  notify: IssueNotifyRequest,
+): Promise<void> {
   return await post(client, `/rest/api/3/issue/${issueIdOrKey}/notify`, notify);
 }
 
 // getIssueEditMeta returns the edit metadata for an issue.
-export async function getIssueEditMeta(client: JiraClient, issueIdOrKey: string): Promise<any> {
+export async function getIssueEditMeta(client: JiraClient, issueIdOrKey: string): Promise<Record<string, unknown>> {
   return await get(client, `/rest/api/3/issue/${issueIdOrKey}/editmeta`);
 }
 
@@ -320,7 +341,7 @@ export async function getCreateMeta(
   client: JiraClient,
   projectKeys?: string[],
   expand?: string[],
-): Promise<any> {
+): Promise<CreateMeta> {
   const query: Record<string, string> = {};
   if (projectKeys && projectKeys.length > 0) {
     query.projectKeys = projectKeys.join(',');
@@ -332,7 +353,7 @@ export async function getCreateMeta(
 }
 
 // getIssueProperties returns all property keys for an issue.
-export async function getIssueProperties(client: JiraClient, issueIdOrKey: string): Promise<any> {
+export async function getIssueProperties(client: JiraClient, issueIdOrKey: string): Promise<EntityProperty[]> {
   const wrapper = await get(client, `/rest/api/3/issue/${issueIdOrKey}/properties`);
   return wrapper.keys;
 }
@@ -342,7 +363,7 @@ export async function getIssueProperty(
   client: JiraClient,
   issueIdOrKey: string,
   propertyKey: string,
-): Promise<any> {
+): Promise<EntityProperty> {
   return await get(client, `/rest/api/3/issue/${issueIdOrKey}/properties/${propertyKey}`);
 }
 
@@ -352,7 +373,7 @@ export async function setIssueProperty(
   issueIdOrKey: string,
   propertyKey: string,
   value: unknown,
-): Promise<any> {
+): Promise<void> {
   return await put(client, `/rest/api/3/issue/${issueIdOrKey}/properties/${propertyKey}`, value);
 }
 
@@ -370,7 +391,7 @@ export async function bulkFetchIssues(
   client: JiraClient,
   issueIDs: string[],
   fields?: string[],
-): Promise<any> {
+): Promise<{ issues: IssueDetailed[] }> {
   const body: Record<string, unknown> = { issueIds: issueIDs };
   if (fields && fields.length > 0) {
     body.fields = fields;

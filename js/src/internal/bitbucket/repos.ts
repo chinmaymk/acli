@@ -1,5 +1,6 @@
 import { get, post, deleteNoContent, getAll, addPaginationParams } from './client.js';
 import type { BitbucketClient, PaginationOptions } from './client.js';
+import type { Repository, CreateRepoRequest, ForkRepoRequest } from './types.js';
 
 export interface ListRepositoriesOptions extends PaginationOptions {
   role?: string;
@@ -7,28 +8,7 @@ export interface ListRepositoriesOptions extends PaginationOptions {
   sort?: string;
 }
 
-export interface CreateRepositoryRequest {
-  scm: string;
-  name: string;
-  slug?: string;
-  is_private?: boolean;
-  description?: string;
-  language?: string;
-  has_issues?: boolean;
-  has_wiki?: boolean;
-  fork_policy?: string;
-  project?: { key: string };
-}
-
-export interface ForkRepositoryRequest {
-  name?: string;
-  workspace?: { slug: string };
-  is_private?: boolean;
-  description?: string;
-  language?: string;
-}
-
-export async function listRepositories(client: BitbucketClient, workspace: string, opts?: ListRepositoriesOptions): Promise<unknown[]> {
+export async function listRepositories(client: BitbucketClient, workspace: string, opts?: ListRepositoriesOptions): Promise<Repository[]> {
   let path = `/repositories/${encodeURIComponent(workspace)}`;
 
   const params = new URLSearchParams();
@@ -43,23 +23,22 @@ export async function listRepositories(client: BitbucketClient, workspace: strin
   if (qs) path += '?' + qs;
 
   if (opts?.all) {
-    return getAll(client, path);
+    return getAll(client, path) as Promise<Repository[]>;
   }
 
   const page = await get(client, path);
   return page.values ?? [];
 }
 
-export async function getRepository(client: BitbucketClient, workspace: string, repoSlug: string): Promise<any> {
+export async function getRepository(client: BitbucketClient, workspace: string, repoSlug: string): Promise<Repository> {
   const path = `/repositories/${encodeURIComponent(workspace)}/${encodeURIComponent(repoSlug)}`;
   return get(client, path);
 }
 
-export async function createRepository(client: BitbucketClient, workspace: string, req: CreateRepositoryRequest): Promise<any> {
-  const slug = req.slug || req.name;
+export async function createRepository(client: BitbucketClient, workspace: string, req: CreateRepoRequest): Promise<Repository> {
+  const slug = req.name;
   const path = `/repositories/${encodeURIComponent(workspace)}/${encodeURIComponent(slug)}`;
   const body: Record<string, unknown> = { ...req };
-  delete body['slug'];
   return post(client, path, body);
 }
 
@@ -68,17 +47,17 @@ export async function deleteRepository(client: BitbucketClient, workspace: strin
   return deleteNoContent(client, path);
 }
 
-export async function forkRepository(client: BitbucketClient, workspace: string, repoSlug: string, req: ForkRepositoryRequest): Promise<any> {
+export async function forkRepository(client: BitbucketClient, workspace: string, repoSlug: string, req: ForkRepoRequest): Promise<Repository> {
   const path = `/repositories/${encodeURIComponent(workspace)}/${encodeURIComponent(repoSlug)}/forks`;
   return post(client, path, req);
 }
 
-export async function listForks(client: BitbucketClient, workspace: string, repoSlug: string, opts?: PaginationOptions): Promise<unknown[]> {
+export async function listForks(client: BitbucketClient, workspace: string, repoSlug: string, opts?: PaginationOptions): Promise<Repository[]> {
   let path = `/repositories/${encodeURIComponent(workspace)}/${encodeURIComponent(repoSlug)}/forks`;
   path = addPaginationParams(path, opts);
 
   if (opts?.all) {
-    return getAll(client, path);
+    return getAll(client, path) as Promise<Repository[]>;
   }
 
   const page = await get(client, path);

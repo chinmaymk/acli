@@ -290,8 +290,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 const resp = await jiraIssues.getIssueTransitions(client, argv['issue-key']);
                 for (const t of resp.transitions || []) {
                   if (
-                    t.name.toLowerCase() === statusName.toLowerCase() ||
-                    (t.to && t.to.name.toLowerCase() === statusName.toLowerCase())
+                    t.name?.toLowerCase() === statusName.toLowerCase() ||
+                    (t.to && t.to.name?.toLowerCase() === statusName.toLowerCase())
                   ) {
                     transitionID = t.id;
                     break;
@@ -382,8 +382,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                       .demandOption(['body']),
                   async (argv: any) => {
                     const client = getJiraClient(argv);
-                    const comment = await jiraIssues.addIssueComment(client, argv['issue-key'], adfDoc(argv.body), null);
-                    outputResult(argv, 'created', comment.id, `Comment ${comment.id} added to ${argv['issue-key']}`, comment);
+                    const comment = await jiraIssues.addIssueComment(client, argv['issue-key'], adfDoc(argv.body), undefined);
+                    outputResult(argv, 'created', comment.id!, `Comment ${comment.id} added to ${argv['issue-key']}`, comment);
                   }
                 )
 
@@ -478,7 +478,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
                     const worklog: any = { timeSpent: argv['time-spent'] };
                     if (argv.started) worklog.started = argv.started;
                     const result = await jiraIssues.addIssueWorklog(client, argv['issue-key'], worklog);
-                    outputResult(argv, 'created', result.id, `Worklog ${result.id} added to ${argv['issue-key']}`, result);
+                    outputResult(argv, 'created', result.id!, `Worklog ${result.id} added to ${argv['issue-key']}`, result);
                   }
                 )
 
@@ -839,7 +839,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
               if (Object.keys(body).length === 0) throw new Error('at least one flag (--name, --description, --lead) must be provided');
 
               const project = await jiraProjects.updateProject(client, argv['project-key'], body);
-              outputResult(argv, 'updated', project.key, `Updated project ${project.key}`, project);
+              outputResult(argv, 'updated', project.key!, `Updated project ${project.key}`, project);
             }
           )
 
@@ -1561,7 +1561,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 description: argv.description,
                 favourite: argv.favourite,
               });
-              outputResult(argv, 'created', created.id, `Filter created: ${created.name} (ID: ${created.id})`, created);
+              outputResult(argv, 'created', created.id!, `Filter created: ${created.name} (ID: ${created.id})`, created);
             }
           )
 
@@ -1582,7 +1582,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
               if (argv.description !== undefined) filter.description = argv.description;
 
               const updated = await jiraProjects.updateFilter(client, argv['filter-id'], filter);
-              outputResult(argv, 'updated', updated.id, `Filter updated: ${updated.name} (ID: ${updated.id})`, updated);
+              outputResult(argv, 'updated', updated.id!, `Filter updated: ${updated.name} (ID: ${updated.id})`, updated);
             }
           )
 
@@ -2965,7 +2965,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
         let records = await jiraAdmin.getAuditRecords(client, argv.startAt, argv.maxResults);
         let allRecords = records.records || [];
         if (argv.all) {
-          while (allRecords.length < records.total) {
+          while (allRecords.length < (records.total ?? 0)) {
             const next = await jiraAdmin.getAuditRecords(client, argv.startAt + allRecords.length, argv.maxResults);
             if (!next.records || next.records.length === 0) break;
             allRecords = allRecords.concat(next.records);

@@ -1,23 +1,13 @@
 import { get, getRaw, post, deleteNoContent, postNoContent, getAll, addPaginationParams } from './client.js';
 import type { BitbucketClient, PaginationOptions } from './client.js';
+import type { Pipeline, RunPipelineRequest, PipelineStep, PipelineVariable } from './types.js';
 
 export interface ListPipelinesOptions extends PaginationOptions {
   status?: string;
   sort?: string;
 }
 
-export interface BranchPipelineTarget {
-  type: string;
-  ref_type: string;
-  ref_name: string;
-  selector?: { type: string; pattern: string };
-}
-
-export interface PipelineRequest {
-  target: BranchPipelineTarget;
-}
-
-export async function listPipelines(client: BitbucketClient, workspace: string, repoSlug: string, opts?: ListPipelinesOptions): Promise<unknown[]> {
+export async function listPipelines(client: BitbucketClient, workspace: string, repoSlug: string, opts?: ListPipelinesOptions): Promise<Pipeline[]> {
   let path = `/repositories/${encodeURIComponent(workspace)}/${encodeURIComponent(repoSlug)}/pipelines`;
 
   const params = new URLSearchParams();
@@ -32,19 +22,19 @@ export async function listPipelines(client: BitbucketClient, workspace: string, 
   if (qs) path += '?' + qs;
 
   if (opts?.all) {
-    return getAll(client, path);
+    return getAll(client, path) as Promise<Pipeline[]>;
   }
 
   const page = await get(client, path);
   return page.values ?? [];
 }
 
-export async function getPipeline(client: BitbucketClient, workspace: string, repoSlug: string, pipelineUUID: string): Promise<any> {
+export async function getPipeline(client: BitbucketClient, workspace: string, repoSlug: string, pipelineUUID: string): Promise<Pipeline> {
   const path = `/repositories/${encodeURIComponent(workspace)}/${encodeURIComponent(repoSlug)}/pipelines/${encodeURIComponent(pipelineUUID)}`;
   return get(client, path);
 }
 
-export function newBranchPipelineRequest(branch: string): PipelineRequest {
+export function newBranchPipelineRequest(branch: string): RunPipelineRequest {
   return {
     target: {
       type: 'pipeline_ref_target',
@@ -54,13 +44,13 @@ export function newBranchPipelineRequest(branch: string): PipelineRequest {
   };
 }
 
-export function newCustomPipelineRequest(branch: string, pattern: string): PipelineRequest {
+export function newCustomPipelineRequest(branch: string, pattern: string): RunPipelineRequest {
   const req = newBranchPipelineRequest(branch);
   req.target.selector = { type: 'custom', pattern };
   return req;
 }
 
-export async function runPipeline(client: BitbucketClient, workspace: string, repoSlug: string, req: PipelineRequest): Promise<any> {
+export async function runPipeline(client: BitbucketClient, workspace: string, repoSlug: string, req: RunPipelineRequest): Promise<Pipeline> {
   const path = `/repositories/${encodeURIComponent(workspace)}/${encodeURIComponent(repoSlug)}/pipelines`;
   return post(client, path, req);
 }
@@ -70,19 +60,19 @@ export async function stopPipeline(client: BitbucketClient, workspace: string, r
   return postNoContent(client, path);
 }
 
-export async function listPipelineSteps(client: BitbucketClient, workspace: string, repoSlug: string, pipelineUUID: string, opts?: PaginationOptions): Promise<unknown[]> {
+export async function listPipelineSteps(client: BitbucketClient, workspace: string, repoSlug: string, pipelineUUID: string, opts?: PaginationOptions): Promise<PipelineStep[]> {
   let path = `/repositories/${encodeURIComponent(workspace)}/${encodeURIComponent(repoSlug)}/pipelines/${encodeURIComponent(pipelineUUID)}/steps`;
   path = addPaginationParams(path, opts);
 
   if (opts?.all) {
-    return getAll(client, path);
+    return getAll(client, path) as Promise<PipelineStep[]>;
   }
 
   const page = await get(client, path);
   return page.values ?? [];
 }
 
-export async function getPipelineStep(client: BitbucketClient, workspace: string, repoSlug: string, pipelineUUID: string, stepUUID: string): Promise<any> {
+export async function getPipelineStep(client: BitbucketClient, workspace: string, repoSlug: string, pipelineUUID: string, stepUUID: string): Promise<PipelineStep> {
   const path = `/repositories/${encodeURIComponent(workspace)}/${encodeURIComponent(repoSlug)}/pipelines/${encodeURIComponent(pipelineUUID)}/steps/${encodeURIComponent(stepUUID)}`;
   return get(client, path);
 }
@@ -92,19 +82,19 @@ export async function getStepLog(client: BitbucketClient, workspace: string, rep
   return getRaw(client, path);
 }
 
-export async function listPipelineVariables(client: BitbucketClient, workspace: string, repoSlug: string, opts?: PaginationOptions): Promise<unknown[]> {
+export async function listPipelineVariables(client: BitbucketClient, workspace: string, repoSlug: string, opts?: PaginationOptions): Promise<PipelineVariable[]> {
   let path = `/repositories/${encodeURIComponent(workspace)}/${encodeURIComponent(repoSlug)}/pipelines_config/variables`;
   path = addPaginationParams(path, opts);
 
   if (opts?.all) {
-    return getAll(client, path);
+    return getAll(client, path) as Promise<PipelineVariable[]>;
   }
 
   const page = await get(client, path);
   return page.values ?? [];
 }
 
-export async function createPipelineVariable(client: BitbucketClient, workspace: string, repoSlug: string, key: string, value: string, secured: boolean): Promise<any> {
+export async function createPipelineVariable(client: BitbucketClient, workspace: string, repoSlug: string, key: string, value: string, secured: boolean): Promise<PipelineVariable> {
   const path = `/repositories/${encodeURIComponent(workspace)}/${encodeURIComponent(repoSlug)}/pipelines_config/variables`;
   return post(client, path, { key, value, secured });
 }
