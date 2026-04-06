@@ -1,47 +1,13 @@
 import { get, getRaw, post, put, deleteNoContent, getAll, addPaginationParams } from './client.js';
-import type { BitbucketClient, PaginationOptions } from './client.js';
+import type { BitbucketClient, PaginationOptions, PaginatedResponse } from './client.js';
+import type { PullRequest, CreatePRRequest, UpdatePRRequest, MergePRRequest, Participant, PRComment, InlineCommentParams, PRTask, CreatePRTaskRequest, UpdatePRTaskRequest, Commit, DiffStat } from './types.js';
 
 export interface ListPullRequestsOptions extends PaginationOptions {
   state?: string;
   author?: string;
 }
 
-export interface CreatePullRequestRequest {
-  title: string;
-  description?: string;
-  sourceBranch: string;
-  destinationBranch?: string;
-  close_source_branch?: boolean;
-}
-
-export interface UpdatePullRequestRequest {
-  title?: string;
-  description?: string;
-  close_source_branch?: boolean;
-}
-
-export interface InlineComment {
-  path: string;
-  to: number;
-}
-
-export interface CreatePRTaskRequest {
-  content: string;
-  commentID?: number;
-}
-
-export interface UpdatePRTaskRequest {
-  content?: string;
-  state?: string;
-}
-
-export interface MergePullRequestRequest {
-  merge_strategy?: string;
-  close_source_branch?: boolean;
-  message?: string;
-}
-
-export async function listPullRequests(client: BitbucketClient, workspace: string, repoSlug: string, opts?: ListPullRequestsOptions): Promise<unknown[]> {
+export async function listPullRequests(client: BitbucketClient, workspace: string, repoSlug: string, opts?: ListPullRequestsOptions): Promise<PullRequest[]> {
   let path = `/repositories/${encodeURIComponent(workspace)}/${encodeURIComponent(repoSlug)}/pullrequests`;
 
   const params = new URLSearchParams();
@@ -68,38 +34,38 @@ export async function listPullRequests(client: BitbucketClient, workspace: strin
   if (qs) path += '?' + qs;
 
   if (opts?.all) {
-    return getAll(client, path);
+    return getAll<PullRequest>(client, path);
   }
 
-  const page = await get(client, path);
+  const page = await get<PaginatedResponse<PullRequest>>(client, path);
   return page.values ?? [];
 }
 
-export async function getPullRequest(client: BitbucketClient, workspace: string, repoSlug: string, prID: number): Promise<any> {
+export async function getPullRequest(client: BitbucketClient, workspace: string, repoSlug: string, prID: number): Promise<PullRequest> {
   const path = `/repositories/${encodeURIComponent(workspace)}/${encodeURIComponent(repoSlug)}/pullrequests/${prID}`;
   return get(client, path);
 }
 
-export async function createPullRequest(client: BitbucketClient, workspace: string, repoSlug: string, req: CreatePullRequestRequest): Promise<any> {
+export async function createPullRequest(client: BitbucketClient, workspace: string, repoSlug: string, req: CreatePRRequest): Promise<PullRequest> {
   const path = `/repositories/${encodeURIComponent(workspace)}/${encodeURIComponent(repoSlug)}/pullrequests`;
   const body: Record<string, unknown> = {
     title: req.title,
     description: req.description,
     close_source_branch: req.close_source_branch,
-    source: { branch: { name: req.sourceBranch } },
+    source: { branch: { name: req.source_branch } },
   };
-  if (req.destinationBranch) {
-    body['destination'] = { branch: { name: req.destinationBranch } };
+  if (req.destination_branch) {
+    body['destination'] = { branch: { name: req.destination_branch } };
   }
   return post(client, path, body);
 }
 
-export async function updatePullRequest(client: BitbucketClient, workspace: string, repoSlug: string, prID: number, req: UpdatePullRequestRequest): Promise<any> {
+export async function updatePullRequest(client: BitbucketClient, workspace: string, repoSlug: string, prID: number, req: UpdatePRRequest): Promise<PullRequest> {
   const path = `/repositories/${encodeURIComponent(workspace)}/${encodeURIComponent(repoSlug)}/pullrequests/${prID}`;
   return put(client, path, req);
 }
 
-export async function approvePullRequest(client: BitbucketClient, workspace: string, repoSlug: string, prID: number): Promise<any> {
+export async function approvePullRequest(client: BitbucketClient, workspace: string, repoSlug: string, prID: number): Promise<Participant> {
   const path = `/repositories/${encodeURIComponent(workspace)}/${encodeURIComponent(repoSlug)}/pullrequests/${prID}/approve`;
   return post(client, path);
 }
@@ -109,17 +75,17 @@ export async function unapprovePullRequest(client: BitbucketClient, workspace: s
   return deleteNoContent(client, path);
 }
 
-export async function declinePullRequest(client: BitbucketClient, workspace: string, repoSlug: string, prID: number): Promise<any> {
+export async function declinePullRequest(client: BitbucketClient, workspace: string, repoSlug: string, prID: number): Promise<PullRequest> {
   const path = `/repositories/${encodeURIComponent(workspace)}/${encodeURIComponent(repoSlug)}/pullrequests/${prID}/decline`;
   return post(client, path);
 }
 
-export async function mergePullRequest(client: BitbucketClient, workspace: string, repoSlug: string, prID: number, req?: MergePullRequestRequest): Promise<any> {
+export async function mergePullRequest(client: BitbucketClient, workspace: string, repoSlug: string, prID: number, req?: MergePRRequest): Promise<PullRequest> {
   const path = `/repositories/${encodeURIComponent(workspace)}/${encodeURIComponent(repoSlug)}/pullrequests/${prID}/merge`;
   return post(client, path, req);
 }
 
-export async function requestChangesPullRequest(client: BitbucketClient, workspace: string, repoSlug: string, prID: number): Promise<any> {
+export async function requestChangesPullRequest(client: BitbucketClient, workspace: string, repoSlug: string, prID: number): Promise<Participant> {
   const path = `/repositories/${encodeURIComponent(workspace)}/${encodeURIComponent(repoSlug)}/pullrequests/${prID}/request-changes`;
   return post(client, path);
 }
@@ -129,19 +95,19 @@ export async function removeRequestChangesPullRequest(client: BitbucketClient, w
   return deleteNoContent(client, path);
 }
 
-export async function listPRComments(client: BitbucketClient, workspace: string, repoSlug: string, prID: number, opts?: PaginationOptions): Promise<unknown[]> {
+export async function listPRComments(client: BitbucketClient, workspace: string, repoSlug: string, prID: number, opts?: PaginationOptions): Promise<PRComment[]> {
   let path = `/repositories/${encodeURIComponent(workspace)}/${encodeURIComponent(repoSlug)}/pullrequests/${prID}/comments`;
   path = addPaginationParams(path, opts);
 
   if (opts?.all) {
-    return getAll(client, path);
+    return getAll<PRComment>(client, path);
   }
 
-  const page = await get(client, path);
+  const page = await get<PaginatedResponse<PRComment>>(client, path);
   return page.values ?? [];
 }
 
-export async function createPRComment(client: BitbucketClient, workspace: string, repoSlug: string, prID: number, content: string, inline?: InlineComment): Promise<any> {
+export async function createPRComment(client: BitbucketClient, workspace: string, repoSlug: string, prID: number, content: string, inline?: InlineCommentParams): Promise<PRComment> {
   const path = `/repositories/${encodeURIComponent(workspace)}/${encodeURIComponent(repoSlug)}/pullrequests/${prID}/comments`;
   const body: Record<string, unknown> = { content: { raw: content } };
   if (inline) {
@@ -150,38 +116,42 @@ export async function createPRComment(client: BitbucketClient, workspace: string
   return post(client, path, body);
 }
 
+export async function createPRCommentInline(client: BitbucketClient, workspace: string, repoSlug: string, prID: number, content: string, inline: InlineCommentParams): Promise<PRComment> {
+  return createPRComment(client, workspace, repoSlug, prID, content, inline);
+}
+
 export async function getPRDiff(client: BitbucketClient, workspace: string, repoSlug: string, prID: number): Promise<string> {
   const path = `/repositories/${encodeURIComponent(workspace)}/${encodeURIComponent(repoSlug)}/pullrequests/${prID}/diff`;
   return getRaw(client, path);
 }
 
-export async function listPRTasks(client: BitbucketClient, workspace: string, repoSlug: string, prID: number, opts?: PaginationOptions): Promise<unknown[]> {
+export async function listPRTasks(client: BitbucketClient, workspace: string, repoSlug: string, prID: number, opts?: PaginationOptions): Promise<PRTask[]> {
   let path = `/repositories/${encodeURIComponent(workspace)}/${encodeURIComponent(repoSlug)}/pullrequests/${prID}/tasks`;
   path = addPaginationParams(path, opts);
 
   if (opts?.all) {
-    return getAll(client, path);
+    return getAll<PRTask>(client, path);
   }
 
-  const page = await get(client, path);
+  const page = await get<PaginatedResponse<PRTask>>(client, path);
   return page.values ?? [];
 }
 
-export async function getPRTask(client: BitbucketClient, workspace: string, repoSlug: string, prID: number, taskID: number): Promise<any> {
+export async function getPRTask(client: BitbucketClient, workspace: string, repoSlug: string, prID: number, taskID: number): Promise<PRTask> {
   const path = `/repositories/${encodeURIComponent(workspace)}/${encodeURIComponent(repoSlug)}/pullrequests/${prID}/tasks/${taskID}`;
   return get(client, path);
 }
 
-export async function createPRTask(client: BitbucketClient, workspace: string, repoSlug: string, prID: number, req: CreatePRTaskRequest): Promise<any> {
+export async function createPRTask(client: BitbucketClient, workspace: string, repoSlug: string, prID: number, req: CreatePRTaskRequest): Promise<PRTask> {
   const path = `/repositories/${encodeURIComponent(workspace)}/${encodeURIComponent(repoSlug)}/pullrequests/${prID}/tasks`;
   const body: Record<string, unknown> = { content: { raw: req.content } };
-  if (req.commentID != null) {
-    body['comment'] = { id: req.commentID };
+  if (req.comment_id != null) {
+    body['comment'] = { id: req.comment_id };
   }
   return post(client, path, body);
 }
 
-export async function updatePRTask(client: BitbucketClient, workspace: string, repoSlug: string, prID: number, taskID: number, req: UpdatePRTaskRequest): Promise<any> {
+export async function updatePRTask(client: BitbucketClient, workspace: string, repoSlug: string, prID: number, taskID: number, req: UpdatePRTaskRequest): Promise<PRTask> {
   const path = `/repositories/${encodeURIComponent(workspace)}/${encodeURIComponent(repoSlug)}/pullrequests/${prID}/tasks/${taskID}`;
   const body: Record<string, unknown> = {};
   if (req.content != null) body['content'] = { raw: req.content };
@@ -194,27 +164,27 @@ export async function deletePRTask(client: BitbucketClient, workspace: string, r
   return deleteNoContent(client, path);
 }
 
-export async function listPRCommits(client: BitbucketClient, workspace: string, repoSlug: string, prID: number, opts?: PaginationOptions): Promise<unknown[]> {
+export async function listPRCommits(client: BitbucketClient, workspace: string, repoSlug: string, prID: number, opts?: PaginationOptions): Promise<Commit[]> {
   let path = `/repositories/${encodeURIComponent(workspace)}/${encodeURIComponent(repoSlug)}/pullrequests/${prID}/commits`;
   path = addPaginationParams(path, opts);
 
   if (opts?.all) {
-    return getAll(client, path);
+    return getAll<Commit>(client, path);
   }
 
-  const page = await get(client, path);
+  const page = await get<PaginatedResponse<Commit>>(client, path);
   return page.values ?? [];
 }
 
-export async function getPRDiffStat(client: BitbucketClient, workspace: string, repoSlug: string, prID: number, opts?: PaginationOptions): Promise<unknown[]> {
+export async function getPRDiffStat(client: BitbucketClient, workspace: string, repoSlug: string, prID: number, opts?: PaginationOptions): Promise<DiffStat[]> {
   let path = `/repositories/${encodeURIComponent(workspace)}/${encodeURIComponent(repoSlug)}/pullrequests/${prID}/diffstat`;
   path = addPaginationParams(path, opts);
 
   if (opts?.all) {
-    return getAll(client, path);
+    return getAll<DiffStat>(client, path);
   }
 
-  const page = await get(client, path);
+  const page = await get<PaginatedResponse<DiffStat>>(client, path);
   return page.values ?? [];
 }
 
@@ -223,9 +193,9 @@ export async function listPRActivity(client: BitbucketClient, workspace: string,
   path = addPaginationParams(path, opts);
 
   if (opts?.all) {
-    return getAll(client, path);
+    return getAll<unknown>(client, path);
   }
 
-  const page = await get(client, path);
+  const page = await get<PaginatedResponse<unknown>>(client, path);
   return page.values ?? [];
 }

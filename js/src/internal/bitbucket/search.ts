@@ -1,15 +1,8 @@
 import { get } from './client.js';
 import type { BitbucketClient, PaginationOptions } from './client.js';
+import type { SearchResponse } from './types.js';
 
-export interface SearchCodeResult {
-  size: number;
-  page?: number;
-  pagelen?: number;
-  next?: string;
-  values: unknown[];
-}
-
-export async function searchCode(client: BitbucketClient, workspace: string, query: string, opts?: PaginationOptions): Promise<SearchCodeResult> {
+export async function searchCode(client: BitbucketClient, workspace: string, query: string, opts?: PaginationOptions): Promise<SearchResponse> {
   const params = new URLSearchParams();
   params.set('search_query', query);
   if (opts?.page !== undefined && opts.page > 0) params.set('page', String(opts.page));
@@ -19,21 +12,21 @@ export async function searchCode(client: BitbucketClient, workspace: string, que
   const basePath = `/workspaces/${encodeURIComponent(workspace)}/search/code?${params.toString()}`;
 
   if (opts?.all) {
-    const allValues: unknown[] = [];
-    let next: string | null = basePath;
+    const allValues: SearchResponse['values'] = [];
+    let nextUrl: string | null = basePath;
     let totalSize = 0;
 
-    while (next) {
-      const result = await get(client, next);
+    while (nextUrl !== null) {
+      const result: SearchResponse = await get<SearchResponse>(client, nextUrl);
       if (Array.isArray(result?.values)) {
         allValues.push(...result.values);
       }
       totalSize = result?.size ?? totalSize;
-      next = result?.next ?? null;
+      nextUrl = result?.next ?? null;
     }
 
-    return { size: totalSize, values: allValues };
+    return { size: totalSize, page: 1, pagelen: allValues.length, next: '', values: allValues };
   }
 
-  return get(client, basePath);
+  return get<SearchResponse>(client, basePath);
 }

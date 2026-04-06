@@ -9,6 +9,12 @@ import type { Argv } from 'yargs';
 
 const DEFAULT_LIMIT = 50;
 
+interface ConfluencePaginatedResponse {
+  results?: unknown[];
+  _links?: { next?: string };
+  [key: string]: unknown;
+}
+
 /**
  * Build a query object from common pagination/sort/format flags in argv.
  */
@@ -65,45 +71,45 @@ function buildQueryString(query: Record<string, string | string[]> | null): stri
 /**
  * Fetch a single page of results from the Confluence v2 API.
  */
-async function confGet(client: ConfluenceClient, path: string, query: Record<string, string | string[]> | null): Promise<any> {
-  return confluenceV2(client, 'GET', path, serializeQuery(query));
+async function confGet<T = unknown>(client: ConfluenceClient, path: string, query: Record<string, string | string[]> | null): Promise<T> {
+  return confluenceV2<T>(client, 'GET', path, serializeQuery(query));
 }
 
 /**
  * POST to the Confluence v2 API.
  */
-async function confPost(client: ConfluenceClient, path: string, query: Record<string, string | string[]> | null, body: unknown): Promise<any> {
-  return confluenceV2(client, 'POST', path, serializeQuery(query), body);
+async function confPost<T = unknown>(client: ConfluenceClient, path: string, query: Record<string, string | string[]> | null, body: unknown): Promise<T> {
+  return confluenceV2<T>(client, 'POST', path, serializeQuery(query), body);
 }
 
 /**
  * PUT to the Confluence v2 API.
  */
-async function confPut(client: ConfluenceClient, path: string, query: Record<string, string | string[]> | null, body: unknown): Promise<any> {
-  return confluenceV2(client, 'PUT', path, serializeQuery(query), body);
+async function confPut<T = unknown>(client: ConfluenceClient, path: string, query: Record<string, string | string[]> | null, body: unknown): Promise<T> {
+  return confluenceV2<T>(client, 'PUT', path, serializeQuery(query), body);
 }
 
 /**
  * DELETE from the Confluence v2 API.
  */
-async function confDelete(client: ConfluenceClient, path: string, query: Record<string, string | string[]> | null): Promise<any> {
-  return confluenceV2(client, 'DELETE', path, serializeQuery(query));
+async function confDelete<T = unknown>(client: ConfluenceClient, path: string, query: Record<string, string | string[]> | null): Promise<T> {
+  return confluenceV2<T>(client, 'DELETE', path, serializeQuery(query));
 }
 
 /**
  * Fetch paginated results, following cursor links when all=true.
  */
-async function confGetPaginated(client: ConfluenceClient, path: string, query: Record<string, string | string[]>, all: boolean): Promise<any> {
+async function confGetPaginated(client: ConfluenceClient, path: string, query: Record<string, string | string[]>, all: boolean): Promise<unknown> {
   if (!all) {
     return confGet(client, path, query);
   }
 
-  const allResults: any[] = [];
+  const allResults: unknown[] = [];
   let currentPath = path;
   let currentQuery: Record<string, string | string[]> = query;
 
   for (;;) {
-    const data = await confluenceV2(client, 'GET', currentPath, serializeQuery(currentQuery));
+    const data = await confluenceV2<ConfluencePaginatedResponse>(client, 'GET', currentPath, serializeQuery(currentQuery));
     if (!data || !data.results) {
       return data;
     }
@@ -133,14 +139,14 @@ async function confGetPaginated(client: ConfluenceClient, path: string, query: R
 /**
  * Pretty-print a JSON value to stdout.
  */
-function printJSON(data: any): void {
+function printJSON(data: unknown): void {
   console.log(JSON.stringify(data, null, 2));
 }
 
 /**
  * Parse a string as JSON; if it fails treat it as a plain string.
  */
-function parseJSONOrString(s: string): any {
+function parseJSONOrString(s: string): unknown {
   try {
     return JSON.parse(s);
   } catch {

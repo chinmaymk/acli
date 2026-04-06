@@ -1,5 +1,15 @@
 import { get, post, put, del } from './client.js';
 import type { JiraClient } from './client.js';
+import type {
+  Board,
+  BoardConfiguration,
+  BoardList,
+  Epic,
+  EpicList,
+  Sprint,
+  SprintIssuesResponse,
+  SprintList,
+} from './types.js';
 
 // --- Boards ---
 
@@ -13,7 +23,7 @@ export async function getBoards(
   projectKeyOrID?: string,
   boardType?: string,
   name?: string,
-): Promise<any> {
+): Promise<BoardList> {
   const query: Record<string, string | number> = { startAt, maxResults };
   if (projectKeyOrID) query.projectKeyOrId = projectKeyOrID;
   if (boardType) query.type = boardType;
@@ -24,14 +34,14 @@ export async function getBoards(
 /**
  * Returns a board by ID.
  */
-export async function getBoard(client: JiraClient, boardID: number): Promise<any> {
+export async function getBoard(client: JiraClient, boardID: number): Promise<Board> {
   return get(client, `/rest/agile/1.0/board/${boardID}`);
 }
 
 /**
  * Returns a board's configuration.
  */
-export async function getBoardConfiguration(client: JiraClient, boardID: number): Promise<any> {
+export async function getBoardConfiguration(client: JiraClient, boardID: number): Promise<BoardConfiguration> {
   return get(client, `/rest/agile/1.0/board/${boardID}/configuration`);
 }
 
@@ -44,7 +54,7 @@ export async function getBoardIssues(
   startAt: number,
   maxResults: number,
   jql?: string,
-): Promise<any> {
+): Promise<SprintIssuesResponse> {
   const query: Record<string, string | number> = { startAt, maxResults };
   if (jql) query.jql = jql;
   return get(client, `/rest/agile/1.0/board/${boardID}/issue`, query as Record<string, string>);
@@ -59,7 +69,7 @@ export async function getBoardBacklog(
   startAt: number,
   maxResults: number,
   jql?: string,
-): Promise<any> {
+): Promise<SprintIssuesResponse> {
   const query: Record<string, string | number> = { startAt, maxResults };
   if (jql) query.jql = jql;
   return get(client, `/rest/agile/1.0/board/${boardID}/backlog`, query as Record<string, string>);
@@ -74,7 +84,7 @@ export async function getBoardSprints(
   startAt: number,
   maxResults: number,
   state?: string,
-): Promise<any> {
+): Promise<SprintList> {
   const query: Record<string, string | number> = { startAt, maxResults };
   if (state) query.state = state;
   return get(client, `/rest/agile/1.0/board/${boardID}/sprint`, query as Record<string, string>);
@@ -88,7 +98,7 @@ export async function getBoardEpics(
   boardID: number,
   startAt: number,
   maxResults: number,
-): Promise<any> {
+): Promise<EpicList> {
   const query: Record<string, string | number> = { startAt, maxResults };
   return get(client, `/rest/agile/1.0/board/${boardID}/epic`, query as Record<string, string>);
 }
@@ -98,14 +108,14 @@ export async function getBoardEpics(
 /**
  * Returns a sprint by ID.
  */
-export async function getSprint(client: JiraClient, sprintID: number): Promise<any> {
+export async function getSprint(client: JiraClient, sprintID: number): Promise<Sprint> {
   return get(client, `/rest/agile/1.0/sprint/${sprintID}`);
 }
 
 /**
  * Creates a new sprint.
  */
-export async function createSprint(client: JiraClient, sprint: unknown): Promise<any> {
+export async function createSprint(client: JiraClient, sprint: Partial<Sprint>): Promise<Sprint> {
   return post(client, '/rest/agile/1.0/sprint', sprint);
 }
 
@@ -115,8 +125,8 @@ export async function createSprint(client: JiraClient, sprint: unknown): Promise
 export async function updateSprint(
   client: JiraClient,
   sprintID: number,
-  sprint: unknown,
-): Promise<any> {
+  sprint: Partial<Sprint>,
+): Promise<Sprint> {
   return put(client, `/rest/agile/1.0/sprint/${sprintID}`, sprint);
 }
 
@@ -126,8 +136,8 @@ export async function updateSprint(
 export async function partialUpdateSprint(
   client: JiraClient,
   sprintID: number,
-  sprint: unknown,
-): Promise<any> {
+  sprint: Partial<Sprint>,
+): Promise<Sprint> {
   return post(client, `/rest/agile/1.0/sprint/${sprintID}`, sprint);
 }
 
@@ -147,7 +157,7 @@ export async function getSprintIssues(
   startAt: number,
   maxResults: number,
   jql?: string,
-): Promise<any> {
+): Promise<SprintIssuesResponse> {
   const query: Record<string, string | number> = { startAt, maxResults };
   if (jql) query.jql = jql;
   return get(client, `/rest/agile/1.0/sprint/${sprintID}/issue`, query as Record<string, string>);
@@ -160,7 +170,7 @@ export async function moveIssuesToSprint(
   client: JiraClient,
   sprintID: number,
   issueKeys: string[],
-): Promise<any> {
+): Promise<void> {
   return post(client, `/rest/agile/1.0/sprint/${sprintID}/issue`, { issues: issueKeys });
 }
 
@@ -170,7 +180,7 @@ export async function moveIssuesToSprint(
 export async function moveIssuesToBacklog(
   client: JiraClient,
   issueKeys: string[],
-): Promise<any> {
+): Promise<void> {
   return post(client, '/rest/agile/1.0/backlog/issue', { issues: issueKeys });
 }
 
@@ -179,7 +189,7 @@ export async function moveIssuesToBacklog(
 /**
  * Returns an epic by ID or key.
  */
-export async function getEpic(client: JiraClient, epicIdOrKey: string): Promise<any> {
+export async function getEpic(client: JiraClient, epicIdOrKey: string): Promise<Epic> {
   return get(client, `/rest/agile/1.0/epic/${epicIdOrKey}`);
 }
 
@@ -190,7 +200,7 @@ export async function moveIssuesToEpic(
   client: JiraClient,
   epicIdOrKey: string,
   issueKeys: string[],
-): Promise<any> {
+): Promise<void> {
   return post(client, `/rest/agile/1.0/epic/${epicIdOrKey}/issue`, { issues: issueKeys });
 }
 
@@ -203,7 +213,7 @@ export async function getEpicIssues(
   startAt: number,
   maxResults: number,
   jql?: string,
-): Promise<any> {
+): Promise<SprintIssuesResponse> {
   const query: Record<string, string | number> = { startAt, maxResults };
   if (jql) query.jql = jql;
   return get(client, `/rest/agile/1.0/epic/${epicIdOrKey}/issue`, query as Record<string, string>);

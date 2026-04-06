@@ -1,33 +1,13 @@
 import { get, post, put, deleteNoContent, getAll, addPaginationParams } from './client.js';
-import type { BitbucketClient, PaginationOptions } from './client.js';
+import type { BitbucketClient, PaginationOptions, PaginatedResponse } from './client.js';
+import type { BBIssue, CreateIssueRequest, UpdateIssueRequest, IssueComment } from './types.js';
 
 export interface ListIssuesOptions extends PaginationOptions {
   q?: string;
   sort?: string;
 }
 
-export interface CreateIssueRequest {
-  title: string;
-  content?: { raw: string };
-  kind?: string;
-  priority?: string;
-  state?: string;
-  assignee?: { uuid: string };
-  component?: { name: string };
-  milestone?: { name: string };
-  version?: { name: string };
-}
-
-export interface UpdateIssueRequest {
-  title?: string;
-  content?: { raw: string };
-  kind?: string;
-  priority?: string;
-  state?: string;
-  assignee?: { uuid: string };
-}
-
-export async function listIssues(client: BitbucketClient, workspace: string, repoSlug: string, opts?: ListIssuesOptions): Promise<unknown[]> {
+export async function listIssues(client: BitbucketClient, workspace: string, repoSlug: string, opts?: ListIssuesOptions): Promise<BBIssue[]> {
   let path = `/repositories/${encodeURIComponent(workspace)}/${encodeURIComponent(repoSlug)}/issues`;
 
   const params = new URLSearchParams();
@@ -41,24 +21,24 @@ export async function listIssues(client: BitbucketClient, workspace: string, rep
   if (qs) path += '?' + qs;
 
   if (opts?.all) {
-    return getAll(client, path);
+    return getAll<BBIssue>(client, path);
   }
 
-  const page = await get(client, path);
+  const page = await get<PaginatedResponse<BBIssue>>(client, path);
   return page.values ?? [];
 }
 
-export async function getIssue(client: BitbucketClient, workspace: string, repoSlug: string, issueID: number): Promise<any> {
+export async function getIssue(client: BitbucketClient, workspace: string, repoSlug: string, issueID: number): Promise<BBIssue> {
   const path = `/repositories/${encodeURIComponent(workspace)}/${encodeURIComponent(repoSlug)}/issues/${issueID}`;
   return get(client, path);
 }
 
-export async function createIssue(client: BitbucketClient, workspace: string, repoSlug: string, req: CreateIssueRequest): Promise<any> {
+export async function createIssue(client: BitbucketClient, workspace: string, repoSlug: string, req: CreateIssueRequest): Promise<BBIssue> {
   const path = `/repositories/${encodeURIComponent(workspace)}/${encodeURIComponent(repoSlug)}/issues`;
   return post(client, path, req);
 }
 
-export async function updateIssue(client: BitbucketClient, workspace: string, repoSlug: string, issueID: number, req: UpdateIssueRequest): Promise<any> {
+export async function updateIssue(client: BitbucketClient, workspace: string, repoSlug: string, issueID: number, req: UpdateIssueRequest): Promise<BBIssue> {
   const path = `/repositories/${encodeURIComponent(workspace)}/${encodeURIComponent(repoSlug)}/issues/${issueID}`;
   return put(client, path, req);
 }
@@ -68,19 +48,19 @@ export async function deleteIssue(client: BitbucketClient, workspace: string, re
   return deleteNoContent(client, path);
 }
 
-export async function listIssueComments(client: BitbucketClient, workspace: string, repoSlug: string, issueID: number, opts?: PaginationOptions): Promise<unknown[]> {
+export async function listIssueComments(client: BitbucketClient, workspace: string, repoSlug: string, issueID: number, opts?: PaginationOptions): Promise<IssueComment[]> {
   let path = `/repositories/${encodeURIComponent(workspace)}/${encodeURIComponent(repoSlug)}/issues/${issueID}/comments`;
   path = addPaginationParams(path, opts);
 
   if (opts?.all) {
-    return getAll(client, path);
+    return getAll<IssueComment>(client, path);
   }
 
-  const page = await get(client, path);
+  const page = await get<PaginatedResponse<IssueComment>>(client, path);
   return page.values ?? [];
 }
 
-export async function createIssueComment(client: BitbucketClient, workspace: string, repoSlug: string, issueID: number, content: string): Promise<any> {
+export async function createIssueComment(client: BitbucketClient, workspace: string, repoSlug: string, issueID: number, content: string): Promise<IssueComment> {
   const path = `/repositories/${encodeURIComponent(workspace)}/${encodeURIComponent(repoSlug)}/issues/${issueID}/comments`;
   return post(client, path, { content: { raw: content } });
 }

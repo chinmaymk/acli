@@ -28,6 +28,17 @@ import * as bbSearch from '../internal/bitbucket/search.js';
 import * as bbDeployments from '../internal/bitbucket/deployments.js';
 import * as bbBranchRestrictions from '../internal/bitbucket/branchrestrictions.js';
 import * as bbUser from '../internal/bitbucket/user.js';
+import type {
+  CreateRepoRequest,
+  ForkRepoRequest,
+  UpdatePRRequest,
+  MergePRRequest,
+  CreatePRTaskRequest,
+  UpdatePRTaskRequest,
+  CreateIssueRequest,
+  CreateWebhookRequest,
+  InlineCommentParams,
+} from '../internal/bitbucket/types.js';
 import type { Argv } from 'yargs';
 
 /**
@@ -42,8 +53,9 @@ const paginationOptions = {
 /**
  * Formats an array of rows as an aligned table using padEnd.
  */
-function printTable(headers: string[], rows: string[][]): void {
-  const allRows = [headers, ...rows];
+type Cell = string | number | boolean | null | undefined;
+function printTable(headers: string[], rows: Cell[][]): void {
+  const allRows: Cell[][] = [headers, ...rows];
   const colCount = headers.length;
   const widths = Array(colCount).fill(0);
   for (const row of allRows) {
@@ -124,7 +136,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   if (isJSONOutput(argv)) { outputJSON(repos); return; }
                   printTable(
                     ['NAME', 'SLUG', 'LANGUAGE', 'PRIVATE', 'UPDATED'],
-                    repos.map((r: any) => [r.full_name, r.slug, r.language, r.is_private, r.updated_on]),
+                    repos.map((r) => [r.full_name, r.slug, r.language, r.is_private, r.updated_on]),
                   );
                 },
               )
@@ -169,10 +181,9 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   if (!argv.name) throw new Error('--name is required');
                   const client = getBitbucketClient(argv);
                   const projectKey = defaultBBProject(argv);
-                  const req: any = {
+                  const req: CreateRepoRequest = {
                     scm: 'git',
                     name: argv.name,
-                    slug: argv.slug,
                     is_private: argv.private,
                     description: argv.description,
                     language: argv.language,
@@ -208,7 +219,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   const args = argv.workspace ? [argv.workspace, argv.repo] : [argv.repo];
                   const [workspace, repoSlug] = resolveWorkspaceAndRepo(argv, args);
                   const client = getBitbucketClient(argv);
-                  const req: any = { name: argv.name };
+                  const req: ForkRepoRequest = { name: argv.name };
                   if (argv['target-workspace']) req.workspace = { slug: argv['target-workspace'] };
                   const repo = await bbRepos.forkRepository(client, workspace, repoSlug, req);
                   outputResult(argv, 'forked', repo.full_name, `Forked repository: ${repo.full_name}`, repo);
@@ -229,7 +240,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   if (isJSONOutput(argv)) { outputJSON(forks); return; }
                   printTable(
                     ['NAME', 'SLUG', 'OWNER', 'PRIVATE'],
-                    forks.map((r: any) => [r.full_name, r.slug, r.owner?.display_name, r.is_private]),
+                    forks.map((r) => [r.full_name, r.slug, r.owner?.display_name, r.is_private]),
                   );
                 },
               );
@@ -263,7 +274,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   if (isJSONOutput(argv)) { outputJSON(prs); return; }
                   printTable(
                     ['ID', 'TITLE', 'STATE', 'AUTHOR', 'SOURCE', 'DESTINATION'],
-                    prs.map((pr: any) => [pr.id, pr.title, pr.state, pr.author?.display_name, pr.source?.branch?.name, pr.destination?.branch?.name]),
+                    prs.map((pr) => [pr.id, pr.title, pr.state, pr.author?.display_name, pr.source?.branch?.name, pr.destination?.branch?.name]),
                   );
                 },
               )
@@ -315,8 +326,8 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   const pr = await bbPRs.createPullRequest(client, workspace, repoSlug, {
                     title: argv.title,
                     description: argv.description,
-                    sourceBranch: argv.source,
-                    destinationBranch: argv.destination,
+                    source_branch: argv.source,
+                    destination_branch: argv.destination,
                     close_source_branch: argv['close-source-branch'],
                   });
                   outputResult(argv, 'created', String(pr.id), `Created PR #${pr.id}: ${pr.title}`, pr);
@@ -338,7 +349,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   const prID = parseInt(idStr, 10);
                   if (isNaN(prID)) throw new Error(`invalid PR ID: ${idStr}`);
                   const client = getBitbucketClient(argv);
-                  const req: any = {};
+                  const req: UpdatePRRequest & { destination?: { branch: { name: string } } } = {};
                   if (argv.title) req.title = argv.title;
                   if (argv.description !== undefined) req.description = argv.description;
                   if (argv.destination) req.destination = { branch: { name: argv.destination } };
@@ -413,7 +424,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   const prID = parseInt(idStr, 10);
                   if (isNaN(prID)) throw new Error(`invalid PR ID: ${idStr}`);
                   const client = getBitbucketClient(argv);
-                  const req: any = {};
+                  const req: MergePRRequest = {};
                   if (argv.strategy) req.merge_strategy = argv.strategy;
                   if (argv.message) req.message = argv.message;
                   if (argv['close-source-branch'] !== undefined) req.close_source_branch = argv['close-source-branch'];
@@ -471,7 +482,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   const client = getBitbucketClient(argv);
                   const comments = await bbPRs.listPRComments(client, workspace, repoSlug, prID, getBBPaginationOpts(argv));
                   if (isJSONOutput(argv)) { outputJSON(comments); return; }
-                  for (const c of comments as any[]) {
+                  for (const c of comments) {
                     console.log(`#${c.id} by ${c.user?.display_name} (${c.created_on})`);
                     if (c.inline) console.log(`  File: ${c.inline.path}`);
                     console.log(`  ${c.content?.raw}\n`);
@@ -497,7 +508,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   if (argv.file && !argv.line) throw new Error('--line is required when --file is specified');
                   if (argv.line && !argv.file) throw new Error('--file is required when --line is specified');
                   const client = getBitbucketClient(argv);
-                  let inline: any;
+                  let inline: InlineCommentParams | undefined;
                   if (argv.file) inline = { path: argv.file, to: argv.line };
                   const comment = await bbPRs.createPRComment(client, workspace, repoSlug, prID, argv.body, inline);
                   outputResult(argv, 'created', String(comment.id), `Added comment #${comment.id} to PR #${prID}`, comment);
@@ -521,7 +532,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   if (isJSONOutput(argv)) { outputJSON(commits); return; }
                   printTable(
                     ['HASH', 'MESSAGE', 'AUTHOR', 'DATE'],
-                    commits.map((c: any) => {
+                    commits.map((c) => {
                       const hash = c.hash?.slice(0, 12) ?? '';
                       return [hash, truncate(firstLine(c.message ?? ''), 60), c.author?.raw, c.date];
                     }),
@@ -546,7 +557,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   if (isJSONOutput(argv)) { outputJSON(stats); return; }
                   printTable(
                     ['STATUS', 'FILE', 'ADDED', 'REMOVED'],
-                    stats.map((s: any) => {
+                    stats.map((s) => {
                       let filePath = '';
                       if (s.status === 'renamed' && s.old && s.new) {
                         filePath = `${s.old.path} → ${s.new.path}`;
@@ -576,7 +587,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   const client = getBitbucketClient(argv);
                   const activities = await bbPRs.listPRActivity(client, workspace, repoSlug, prID, getBBPaginationOpts(argv));
                   if (isJSONOutput(argv)) { outputJSON(activities); return; }
-                  for (const a of activities as any[]) {
+                  for (const a of activities as Array<Record<string, any>>) {
                     if (a.approval) {
                       console.log(`[APPROVAL] ${a.approval.user?.display_name} approved on ${a.approval.date}`);
                     } else if (a.update) {
@@ -617,7 +628,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                         if (isJSONOutput(argv)) { outputJSON(tasks); return; }
                         printTable(
                           ['ID', 'STATE', 'CONTENT', 'CREATOR', 'CREATED'],
-                          tasks.map((t: any) => [t.id, t.state, truncate(t.content?.raw ?? '', 60), t.creator?.display_name, t.created_on]),
+                          tasks.map((t) => [t.id, t.state, truncate(t.content?.raw ?? '', 60), t.creator?.display_name, t.created_on]),
                         );
                       },
                     )
@@ -672,7 +683,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                         if (argv.line && !argv.file) throw new Error('--file is required when --line is specified');
                         if (argv.file && argv['comment-id']) throw new Error('--comment-id cannot be used with --file/--line');
                         const client = getBitbucketClient(argv);
-                        const req: any = { content: argv.body };
+                        const req: CreatePRTaskRequest = { content: argv.body };
                         if (argv.file) {
                           const comment = await bbPRs.createPRComment(client, workspace, repoSlug, prID, argv.body, { path: argv.file, to: argv.line });
                           req.comment_id = comment.id;
@@ -704,7 +715,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                         if (isNaN(taskID)) throw new Error(`invalid task ID: ${taskIDStr}`);
                         if (!argv.body && !argv.state) throw new Error('at least one of --body or --state is required');
                         const client = getBitbucketClient(argv);
-                        const req: any = {};
+                        const req: UpdatePRTaskRequest = {};
                         if (argv.body) req.content = argv.body;
                         if (argv.state) req.state = argv.state;
                         const task = await bbPRs.updatePRTask(client, workspace, repoSlug, prID, taskID, req);
@@ -784,7 +795,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   });
                   printTable(
                     ['BUILD#', 'STATUS', 'TRIGGER', 'TARGET', 'CREATED'],
-                    pipelines.map((p: any) => {
+                    pipelines.map((p) => {
                       const status = p.state?.result?.name ?? p.state?.name ?? '';
                       const target = p.target?.ref_name ?? '';
                       return [p.build_number, status, p.trigger?.name, target, p.created_on];
@@ -868,7 +879,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   const steps = await bbPipelines.listPipelineSteps(client, workspace, repoSlug, pipelineUUID, getBBPaginationOpts(argv));
                   printTable(
                     ['UUID', 'NAME', 'STATUS', 'DURATION', 'IMAGE'],
-                    steps.map((s: any) => {
+                    steps.map((s) => {
                       const status = s.state?.result?.name ?? s.state?.name ?? '';
                       return [s.uuid, s.name, status, `${s.duration_in_seconds}s`, s.image?.name];
                     }),
@@ -923,7 +934,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   const vars = await bbPipelines.listPipelineVariables(client, workspace, repoSlug, getBBPaginationOpts(argv));
                   printTable(
                     ['UUID', 'KEY', 'VALUE', 'SECURED'],
-                    vars.map((v: any) => [v.uuid, v.key, v.secured ? '***' : v.value, v.secured]),
+                    vars.map((v) => [v.uuid, v.key, v.secured ? '***' : v.value, v.secured]),
                   );
                 },
               )
@@ -988,7 +999,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   if (isJSONOutput(argv)) { outputJSON(branches); return; }
                   printTable(
                     ['NAME', 'HASH', 'DATE', 'AUTHOR'],
-                    branches.map((b: any) => [b.name, b.target?.hash?.slice(0, 12) ?? '', b.target?.date, b.target?.author?.raw]),
+                    branches.map((b) => [b.name, b.target?.hash?.slice(0, 12) ?? '', b.target?.date, b.target?.author?.raw]),
                   );
                 },
               )
@@ -1074,7 +1085,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   if (isJSONOutput(argv)) { outputJSON(tags); return; }
                   printTable(
                     ['NAME', 'HASH', 'DATE', 'MESSAGE'],
-                    tags.map((t: any) => {
+                    tags.map((t) => {
                       const hash = t.target?.hash?.slice(0, 12) ?? '';
                       const msg = truncate(t.message ?? '', 60);
                       return [t.name, hash, t.target?.date, msg];
@@ -1167,7 +1178,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   if (isJSONOutput(argv)) { outputJSON(commits); return; }
                   printTable(
                     ['HASH', 'DATE', 'AUTHOR', 'MESSAGE'],
-                    commits.map((c: any) => {
+                    commits.map((c) => {
                       const hash = c.hash?.slice(0, 12) ?? '';
                       const msg = truncate(firstLine(c.message ?? ''), 60);
                       return [hash, c.date, c.author?.raw, msg];
@@ -1192,7 +1203,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   console.log(`Author:   ${commit.author?.raw}`);
                   console.log(`Message:  ${commit.message}`);
                   if (commit.parents?.length > 0) {
-                    const parents = commit.parents.map((p: any) => p.hash?.slice(0, 12)).join(', ');
+                    const parents = commit.parents.map((p) => p.hash?.slice(0, 12)).join(', ');
                     console.log(`Parents:  ${parents}`);
                   }
                   console.log(`URL:      ${commit.links?.html?.href}`);
@@ -1214,7 +1225,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   if (isJSONOutput(argv)) { outputJSON(statuses); return; }
                   printTable(
                     ['KEY', 'STATE', 'NAME', 'DESCRIPTION', 'UPDATED'],
-                    statuses.map((s: any) => [s.key, s.state, s.name, s.description, s.updated_on]),
+                    statuses.map((s) => [s.key, s.state, s.name, s.description, s.updated_on]),
                   );
                 },
               )
@@ -1252,7 +1263,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   if (isJSONOutput(argv)) { outputJSON(workspaces); return; }
                   printTable(
                     ['SLUG', 'NAME', 'UUID'],
-                    workspaces.map((ws: any) => [ws.slug, ws.name, ws.uuid]),
+                    workspaces.map((ws) => [ws.slug, ws.name, ws.uuid]),
                   );
                 },
               )
@@ -1287,7 +1298,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   if (isJSONOutput(argv)) { outputJSON(members); return; }
                   printTable(
                     ['DISPLAY NAME', 'NICKNAME', 'UUID'],
-                    members.map((m: any) => [m.user?.display_name, m.user?.nickname, m.user?.uuid]),
+                    members.map((m) => [m.user?.display_name, m.user?.nickname, m.user?.uuid]),
                   );
                 },
               )
@@ -1305,7 +1316,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   if (isJSONOutput(argv)) { outputJSON(perms); return; }
                   printTable(
                     ['USER', 'PERMISSION'],
-                    perms.map((p: any) => [p.user?.display_name, p.permission]),
+                    perms.map((p) => [p.user?.display_name, p.permission]),
                   );
                 },
               );
@@ -1332,7 +1343,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   if (isJSONOutput(argv)) { outputJSON(projects); return; }
                   printTable(
                     ['KEY', 'NAME', 'PRIVATE', 'UPDATED'],
-                    projects.map((p: any) => [p.key, p.name, p.is_private, p.updated_on]),
+                    projects.map((p) => [p.key, p.name, p.is_private, p.updated_on]),
                   );
                 },
               )
@@ -1430,7 +1441,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   if (isJSONOutput(argv)) { outputJSON(hooks); return; }
                   printTable(
                     ['UUID', 'DESCRIPTION', 'URL', 'ACTIVE', 'EVENTS'],
-                    hooks.map((h: any) => [h.uuid, h.description, h.url, h.active, (h.events ?? []).join(',')]),
+                    hooks.map((h) => [h.uuid, h.description, h.url, h.active, (h.events ?? []).join(',')]),
                   );
                 },
               )
@@ -1493,12 +1504,12 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   const args = argv.workspace ? [argv.workspace, argv.repo, argv['webhook-uuid']] : [argv.repo, argv['webhook-uuid']];
                   const [workspace, repoSlug, hookUUID] = resolveWorkspaceRepoAndID(argv, args);
                   const client = getBitbucketClient(argv);
-                  const req: any = {};
+                  const req: Partial<CreateWebhookRequest> = {};
                   if (argv.url) req.url = argv.url;
                   if (argv.description !== undefined) req.description = argv.description;
                   if (argv.events) req.events = argv.events;
                   if (argv.active !== undefined) req.active = argv.active;
-                  const hook = await bbWebhooks.updateRepoWebhook(client, workspace, repoSlug, hookUUID, req);
+                  const hook = await bbWebhooks.updateRepoWebhook(client, workspace, repoSlug, hookUUID, req as CreateWebhookRequest);
                   outputResult(argv, 'updated', hook.uuid, `Updated webhook: ${hook.uuid}`, hook);
                 },
               )
@@ -1531,7 +1542,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   if (isJSONOutput(argv)) { outputJSON(hooks); return; }
                   printTable(
                     ['UUID', 'DESCRIPTION', 'URL', 'ACTIVE', 'EVENTS'],
-                    hooks.map((h: any) => [h.uuid, h.description, h.url, h.active, (h.events ?? []).join(',')]),
+                    hooks.map((h) => [h.uuid, h.description, h.url, h.active, (h.events ?? []).join(',')]),
                   );
                 },
               )
@@ -1602,7 +1613,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   if (isJSONOutput(argv)) { outputJSON(envs); return; }
                   printTable(
                     ['UUID', 'NAME', 'TYPE', 'RANK'],
-                    envs.map((e: any) => [e.uuid, e.name, e.environment_type?.name, e.rank]),
+                    envs.map((e) => [e.uuid, e.name, e.environment_type?.name, e.rank]),
                   );
                 },
               )
@@ -1686,7 +1697,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   if (isJSONOutput(argv)) { outputJSON(keys); return; }
                   printTable(
                     ['ID', 'LABEL', 'COMMENT', 'CREATED'],
-                    keys.map((k: any) => [k.id, k.label, k.comment, k.created_on]),
+                    keys.map((k) => [k.id, k.label, k.comment, k.created_on]),
                   );
                 },
               )
@@ -1772,7 +1783,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   if (isJSONOutput(argv)) { outputJSON(downloads); return; }
                   printTable(
                     ['NAME', 'SIZE', 'DOWNLOADS', 'CREATED'],
-                    downloads.map((d: any) => [d.name, d.size, d.downloads, d.created_on]),
+                    downloads.map((d) => [d.name, d.size, d.downloads, d.created_on]),
                   );
                 },
               )
@@ -1814,7 +1825,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   if (isJSONOutput(argv)) { outputJSON(snippets); return; }
                   printTable(
                     ['ID', 'TITLE', 'PRIVATE', 'CREATED', 'OWNER'],
-                    snippets.map((s: any) => [s.id, s.title, s.is_private, s.created_on, s.owner?.display_name]),
+                    snippets.map((s) => [s.id, s.title, s.is_private, s.created_on, s.owner?.display_name]),
                   );
                 },
               )
@@ -1914,7 +1925,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   if (isJSONOutput(argv)) { outputJSON(issues); return; }
                   printTable(
                     ['ID', 'TITLE', 'STATE', 'PRIORITY', 'KIND', 'ASSIGNEE'],
-                    issues.map((issue: any) => [
+                    issues.map((issue) => [
                       issue.id,
                       issue.title,
                       issue.state,
@@ -1971,7 +1982,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   const [workspace, repoSlug] = resolveWorkspaceAndRepo(argv, args);
                   if (!argv.title) throw new Error('--title is required');
                   const client = getBitbucketClient(argv);
-                  const req: any = {
+                  const req: CreateIssueRequest = {
                     title: argv.title,
                     kind: argv.kind,
                     priority: argv.priority,
@@ -2042,7 +2053,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   const client = getBitbucketClient(argv);
                   const comments = await bbIssues.listIssueComments(client, workspace, repoSlug, issueID, getBBPaginationOpts(argv));
                   if (isJSONOutput(argv)) { outputJSON(comments); return; }
-                  for (const c of comments as any[]) {
+                  for (const c of comments) {
                     console.log(`#${c.id} by ${c.user?.display_name} (${c.created_on})`);
                     console.log(`  ${c.content?.raw}\n`);
                   }
@@ -2090,11 +2101,11 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                 const results = await bbSearch.searchCode(client, workspace, argv.query, getBBPaginationOpts(argv));
                 if (isJSONOutput(argv)) { outputJSON(results); return; }
                 console.log(`Found ${results.size ?? 0} results\n`);
-                for (const r of (results.values ?? []) as any[]) {
+                for (const r of results.values ?? []) {
                   console.log(`File: ${r.file?.path} (${r.content_match_count} matches)`);
                   for (const m of r.content_matches ?? []) {
                     for (const line of m.lines ?? []) {
-                      const parts = (line.segments ?? []).map((seg: any) =>
+                      const parts = (line.segments ?? []).map((seg) =>
                         seg.match ? `[${seg.text}]` : seg.text,
                       );
                       console.log(`  ${line.line}: ${parts.join('')}`);
@@ -2128,7 +2139,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   if (isJSONOutput(argv)) { outputJSON(deployments); return; }
                   printTable(
                     ['UUID', 'ENVIRONMENT', 'STATUS', 'RELEASE', 'COMMIT', 'CREATED'],
-                    deployments.map((d: any) => {
+                    deployments.map((d) => {
                       const hash = d.release?.commit?.hash?.slice(0, 12) ?? '';
                       return [d.uuid, d.environment?.name, d.state?.status?.name, d.release?.name, hash, d.release?.created_on];
                     }),
@@ -2181,7 +2192,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   if (isJSONOutput(argv)) { outputJSON(restrictions); return; }
                   printTable(
                     ['ID', 'KIND', 'PATTERN'],
-                    restrictions.map((r: any) => [r.id, r.kind, r.pattern]),
+                    restrictions.map((r) => [r.id, r.kind, r.pattern]),
                   );
                 },
               )

@@ -15,6 +15,32 @@ import * as jiraAdmin from '../internal/jira/admin.js';
 import * as jiraSchemes from '../internal/jira/schemes.js';
 import { render as renderADF } from '../internal/adf/render.js';
 import type { Argv } from 'yargs';
+import type {
+  AnnouncementBanner,
+  Dashboard,
+  DashboardGadget,
+  Field,
+  Filter,
+  IssueLinkType,
+  IssueSecurityScheme,
+  IssueType,
+  IssueTypeScheme,
+  NotificationScheme,
+  PermissionScheme,
+  Priority,
+  Project,
+  ProjectCategory,
+  ProjectComponent,
+  ProjectRole,
+  Resolution,
+  Screen,
+  Sprint,
+  UserPermission,
+  Version,
+  Worklog,
+  WorkflowScheme,
+  FieldConfiguration,
+} from '../internal/jira/types.js';
 
 // ============================================================================
 // Helper: aligned table printer (same pattern as bitbucket.js)
@@ -116,7 +142,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
 
               if (isJSONOutput(argv)) { outputJSON(results); return; }
 
-              const rows = (results.issues || []).map((issue: any) => [
+              const rows = (results.issues || []).map((issue) => [
                 issue.key || '',
                 issue.fields?.issuetype?.name || '',
                 issue.fields?.status?.name || '',
@@ -143,8 +169,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
               const f = issue.fields || {};
               const description = renderADF(f.description);
               const labels = (f.labels || []).join(', ');
-              const components = (f.components || []).map((c: any) => c.name).join(', ');
-              const fixVersions = (f.fixVersions || []).map((v: any) => v.name).join(', ');
+              const components = (f.components || []).map((c) => c.name).join(', ');
+              const fixVersions = (f.fixVersions || []).map((v) => v.name).join(', ');
 
               console.log(`Key:          ${issue.key}`);
               console.log(`Summary:      ${f.summary || ''}`);
@@ -182,7 +208,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
               const project = defaultProject(argv);
               if (!project) throw new Error("--project is required (or set a default with 'acli config set-defaults')");
 
-              const fields: any = {
+              const fields: Record<string, unknown> = {
                 project: { key: project },
                 issuetype: { name: argv.type },
                 summary: argv.summary,
@@ -216,7 +242,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .option('components', { type: 'array', description: 'Component names' }),
             async (argv: any) => {
               const client = getJiraClient(argv);
-              const fields: any = {};
+              const fields: Record<string, unknown> = {};
 
               if (argv.summary !== undefined) fields.summary = argv.summary;
               if (argv.description !== undefined) fields.description = adfDoc(argv.description);
@@ -290,15 +316,15 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 const resp = await jiraIssues.getIssueTransitions(client, argv['issue-key']);
                 for (const t of resp.transitions || []) {
                   if (
-                    t.name.toLowerCase() === statusName.toLowerCase() ||
-                    (t.to && t.to.name.toLowerCase() === statusName.toLowerCase())
+                    t.name?.toLowerCase() === statusName.toLowerCase() ||
+                    (t.to && t.to.name?.toLowerCase() === statusName.toLowerCase())
                   ) {
                     transitionID = t.id;
                     break;
                   }
                 }
                 if (!transitionID) {
-                  const available = (resp.transitions || []).map((t: any) =>
+                  const available = (resp.transitions || []).map((t) =>
                     t.to && t.to.name !== t.name ? `${t.name} (-> ${t.to.name})` : t.name
                   );
                   throw new Error(`no transition found matching status "${statusName}"; available transitions: ${available.join(', ')}`);
@@ -321,7 +347,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
 
               if (isJSONOutput(argv)) { outputJSON(resp); return; }
 
-              const rows = (resp.transitions || []).map((t: any) => [
+              const rows = (resp.transitions || []).map((t) => [
                 t.id || '',
                 t.name || '',
                 t.to?.name || '',
@@ -361,7 +387,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
                     }
                     if (isJSONOutput(argv)) { outputJSON(page); return; }
 
-                    const rows = (page.comments || []).map((c: any) => {
+                    const rows = (page.comments || []).map((c) => {
                       const author = c.author?.displayName || '';
                       let body = renderADF(c.body);
                       if (body.length > 60) body = body.slice(0, 57) + '...';
@@ -382,8 +408,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                       .demandOption(['body']),
                   async (argv: any) => {
                     const client = getJiraClient(argv);
-                    const comment = await jiraIssues.addIssueComment(client, argv['issue-key'], adfDoc(argv.body), null);
-                    outputResult(argv, 'created', comment.id, `Comment ${comment.id} added to ${argv['issue-key']}`, comment);
+                    const comment = await jiraIssues.addIssueComment(client, argv['issue-key'], adfDoc(argv.body), undefined);
+                    outputResult(argv, 'created', comment.id!, `Comment ${comment.id} added to ${argv['issue-key']}`, comment);
                   }
                 )
 
@@ -453,7 +479,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
                     }
                     if (isJSONOutput(argv)) { outputJSON(page); return; }
 
-                    const rows = (page.worklogs || []).map((wl: any) => [
+                    const rows = (page.worklogs || []).map((wl) => [
                       wl.id || '',
                       wl.author?.displayName || '',
                       wl.timeSpent || '',
@@ -475,10 +501,10 @@ export function registerJiraCommands(yargs: Argv): Argv {
                       .demandOption(['time-spent']),
                   async (argv: any) => {
                     const client = getJiraClient(argv);
-                    const worklog: any = { timeSpent: argv['time-spent'] };
+                    const worklog: Partial<Worklog> = { timeSpent: argv['time-spent'] };
                     if (argv.started) worklog.started = argv.started;
                     const result = await jiraIssues.addIssueWorklog(client, argv['issue-key'], worklog);
-                    outputResult(argv, 'created', result.id, `Worklog ${result.id} added to ${argv['issue-key']}`, result);
+                    outputResult(argv, 'created', result.id!, `Worklog ${result.id} added to ${argv['issue-key']}`, result);
                   }
                 )
 
@@ -584,7 +610,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
               const watches = await jiraIssues.getIssueWatchers(client, argv['issue-key']);
               if (isJSONOutput(argv)) { outputJSON(watches); return; }
 
-              const rows = (watches.watchers || []).map((w: any) => [w.accountId || '', w.displayName || '']);
+              const rows = (watches.watchers || []).map((w) => [w.accountId || '', w.displayName || '']);
               printTable(['ACCOUNT ID', 'DISPLAY NAME'], rows);
               console.log(`\nTotal watchers: ${watches.watchCount || 0}`);
             }
@@ -644,7 +670,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
                     const links = await jiraIssues.getIssueRemoteLinks(client, argv['issue-key']);
                     if (isJSONOutput(argv)) { outputJSON(links); return; }
 
-                    const rows = (links || []).map((l: any) => [
+                    const rows = (links || []).map((l) => [
                       String(l.id || ''),
                       l.object?.title || '',
                       l.object?.url || '',
@@ -762,7 +788,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
 
               if (isJSONOutput(argv)) { outputJSON(result); return; }
 
-              const rows = (result.values || []).map((p: any) => [
+              const rows = (result.values || []).map((p) => [
                 p.key || '',
                 p.name || '',
                 p.projectTypeKey || '',
@@ -811,7 +837,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .demandOption(['key', 'name']),
             async (argv: any) => {
               const client = getJiraClient(argv);
-              const body: any = { key: argv.key, name: argv.name, projectTypeKey: argv.type };
+              const body: Partial<Project> & { leadAccountId?: string } = { key: argv.key, name: argv.name, projectTypeKey: argv.type };
               if (argv.lead) body.leadAccountId = argv.lead;
               if (argv.description) body.description = argv.description;
 
@@ -831,7 +857,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .option('lead', { type: 'string', description: 'Lead account ID' }),
             async (argv: any) => {
               const client = getJiraClient(argv);
-              const body: any = {};
+              const body: Partial<Project> & { leadAccountId?: string } = {};
               if (argv.name !== undefined) body.name = argv.name;
               if (argv.description !== undefined) body.description = argv.description;
               if (argv.lead !== undefined) body.leadAccountId = argv.lead;
@@ -839,7 +865,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
               if (Object.keys(body).length === 0) throw new Error('at least one flag (--name, --description, --lead) must be provided');
 
               const project = await jiraProjects.updateProject(client, argv['project-key'], body);
-              outputResult(argv, 'updated', project.key, `Updated project ${project.key}`, project);
+              outputResult(argv, 'updated', project.key!, `Updated project ${project.key}`, project);
             }
           )
 
@@ -861,7 +887,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
             async (argv: any) => {
               const client = getJiraClient(argv);
               const components = await jiraProjects.getProjectComponents(client, argv['project-key']);
-              const rows = (components || []).map((c: any) => [
+              const rows = (components || []).map((c) => [
                 c.id || '',
                 c.name || '',
                 c.lead?.displayName || '',
@@ -878,7 +904,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
             async (argv: any) => {
               const client = getJiraClient(argv);
               const versions = await jiraProjects.getProjectVersions(client, argv['project-key']);
-              const rows = (versions || []).map((v: any) => {
+              const rows = (versions || []).map((v) => {
                 let status = 'Unreleased';
                 if (v.released) status = 'Released';
                 else if (v.archived) status = 'Archived';
@@ -946,7 +972,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
             async (argv: any) => {
               const client = getJiraClient(argv);
               const resp = await jiraProjects.getProjectFeatures(client, argv['project-key']);
-              const rows = (resp.features || []).map((f: any) => [
+              const rows = (resp.features || []).map((f) => [
                 f.localisedName || f.feature || '',
                 f.state || '',
               ]);
@@ -993,7 +1019,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
 
               if (isJSONOutput(argv)) { outputJSON(result); return; }
 
-              const rows = (result.values || []).map((b: any) => [
+              const rows = (result.values || []).map((b) => [
                 String(b.id || ''),
                 b.name || '',
                 b.type || '',
@@ -1057,7 +1083,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
 
               if (isJSONOutput(argv)) { outputJSON(result); return; }
 
-              const rows = (result.issues || []).map((issue: any) => [
+              const rows = (result.issues || []).map((issue) => [
                 issue.key || '',
                 issue.fields?.issuetype?.name || '',
                 issue.fields?.status?.name || '',
@@ -1094,7 +1120,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
 
               if (isJSONOutput(argv)) { outputJSON(result); return; }
 
-              const rows = (result.issues || []).map((issue: any) => [
+              const rows = (result.issues || []).map((issue) => [
                 issue.key || '',
                 issue.fields?.issuetype?.name || '',
                 issue.fields?.status?.name || '',
@@ -1132,7 +1158,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
 
               if (isJSONOutput(argv)) { outputJSON(result); return; }
 
-              const rows = (result.values || []).map((s: any) => [
+              const rows = (result.values || []).map((s) => [
                 String(s.id || ''),
                 s.name || '',
                 s.state || '',
@@ -1168,7 +1194,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
 
               if (isJSONOutput(argv)) { outputJSON(result); return; }
 
-              const rows = (result.values || []).map((e: any) => [
+              const rows = (result.values || []).map((e) => [
                 String(e.id || ''),
                 e.key || '',
                 e.name || '',
@@ -1225,7 +1251,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .demandOption(['name', 'board-id']),
             async (argv: any) => {
               const client = getJiraClient(argv);
-              const body: any = { name: argv.name, originBoardId: argv.boardId };
+              const body: Partial<Sprint> = { name: argv.name, originBoardId: argv.boardId };
               if (argv.startDate) body.startDate = argv.startDate;
               if (argv.endDate) body.endDate = argv.endDate;
               if (argv.goal) body.goal = argv.goal;
@@ -1248,7 +1274,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .option('goal', { type: 'string', description: 'Sprint goal' }),
             async (argv: any) => {
               const client = getJiraClient(argv);
-              const body: any = {};
+              const body: Partial<Sprint> = {};
               if (argv.name !== undefined) body.name = argv.name;
               if (argv.state !== undefined) body.state = argv.state;
               if (argv.startDate !== undefined) body.startDate = argv.startDate;
@@ -1295,7 +1321,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
 
               if (isJSONOutput(argv)) { outputJSON(result); return; }
 
-              const rows = (result.issues || []).map((issue: any) => [
+              const rows = (result.issues || []).map((issue) => [
                 issue.key || '',
                 issue.fields?.issuetype?.name || '',
                 issue.fields?.status?.name || '',
@@ -1377,7 +1403,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
 
               if (isJSONOutput(argv)) { outputJSON(result); return; }
 
-              const rows = (result.issues || []).map((issue: any) => [
+              const rows = (result.issues || []).map((issue) => [
                 issue.key || '',
                 issue.fields?.issuetype?.name || '',
                 issue.fields?.status?.name || '',
@@ -1452,7 +1478,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
 
         if (isJSONOutput(argv)) { outputJSON(results); return; }
 
-        const rows = (results.issues || []).map((issue: any) => [
+        const rows = (results.issues || []).map((issue) => [
           issue.key || '',
           issue.fields?.issuetype?.name || '',
           issue.fields?.status?.name || '',
@@ -1488,7 +1514,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .option('all', { type: 'boolean', default: false }),
             async (argv: any) => {
               const client = getJiraClient(argv);
-              let filters: any[] = [];
+              let filters: Filter[] = [];
               let total = 0;
 
               if (argv.favourites) {
@@ -1513,7 +1539,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
 
               if (isJSONOutput(argv)) { outputJSON(filters); return; }
 
-              const rows = filters.map((f: any) => [
+              const rows = filters.map((f) => [
                 f.id || '',
                 f.name || '',
                 f.owner?.displayName || '',
@@ -1561,7 +1587,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 description: argv.description,
                 favourite: argv.favourite,
               });
-              outputResult(argv, 'created', created.id, `Filter created: ${created.name} (ID: ${created.id})`, created);
+              outputResult(argv, 'created', created.id!, `Filter created: ${created.name} (ID: ${created.id})`, created);
             }
           )
 
@@ -1576,13 +1602,13 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .option('description', { type: 'string', description: 'Filter description' }),
             async (argv: any) => {
               const client = getJiraClient(argv);
-              const filter: any = {};
+              const filter: Partial<Filter> = {};
               if (argv.name !== undefined) filter.name = argv.name;
               if (argv.jql !== undefined) filter.jql = argv.jql;
               if (argv.description !== undefined) filter.description = argv.description;
 
               const updated = await jiraProjects.updateFilter(client, argv['filter-id'], filter);
-              outputResult(argv, 'updated', updated.id, `Filter updated: ${updated.name} (ID: ${updated.id})`, updated);
+              outputResult(argv, 'updated', updated.id!, `Filter updated: ${updated.name} (ID: ${updated.id})`, updated);
             }
           )
 
@@ -1649,7 +1675,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
               }
               if (isJSONOutput(argv)) { outputJSON(users); return; }
 
-              const rows = users.map((u: any) => [u.accountId || '', u.displayName || '', u.emailAddress || '', String(u.active)]);
+              const rows = users.map((u) => [u.accountId || '', u.displayName || '', u.emailAddress || '', String(u.active)]);
               printTable(['ACCOUNT_ID', 'DISPLAY_NAME', 'EMAIL', 'ACTIVE'], rows);
             }
           )
@@ -1667,7 +1693,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
               const client = getJiraClient(argv);
               const project = defaultProject(argv);
               const users = await jiraAdmin.findUsersAssignable(client, argv.query, project, argv.issueKey, 0, argv.maxResults);
-              const rows = (users || []).map((u: any) => [u.accountId || '', u.displayName || '', u.emailAddress || '', String(u.active)]);
+              const rows = (users || []).map((u) => [u.accountId || '', u.displayName || '', u.emailAddress || '', String(u.active)]);
               printTable(['ACCOUNT_ID', 'DISPLAY_NAME', 'EMAIL', 'ACTIVE'], rows);
             }
           )
@@ -1705,7 +1731,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
                   users = users.concat(next);
                 }
               }
-              const rows = (users || []).map((u: any) => [u.accountId || '', u.displayName || '', u.emailAddress || '', String(u.active)]);
+              const rows = (users || []).map((u) => [u.accountId || '', u.displayName || '', u.emailAddress || '', String(u.active)]);
               printTable(['ACCOUNT_ID', 'DISPLAY_NAME', 'EMAIL', 'ACTIVE'], rows);
             }
           )
@@ -1770,7 +1796,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
               }
               if (isJSONOutput(argv)) { outputJSON(allGroups); return; }
 
-              const rows = allGroups.map((g: any) => [g.groupId || '', g.name || '']);
+              const rows = allGroups.map((g) => [g.groupId || '', g.name || '']);
               printTable(['GROUP_ID', 'NAME'], rows);
             }
           )
@@ -1835,7 +1861,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
                   members = next;
                 }
               }
-              const rows = allMembers.map((u: any) => [u.accountId || '', u.displayName || '', u.emailAddress || '', String(u.active)]);
+              const rows = allMembers.map((u) => [u.accountId || '', u.displayName || '', u.emailAddress || '', String(u.active)]);
               printTable(['ACCOUNT_ID', 'DISPLAY_NAME', 'EMAIL', 'ACTIVE'], rows);
             }
           )
@@ -1880,7 +1906,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
             async (argv: any) => {
               const client = getJiraClient(argv);
               const found = await jiraAdmin.findGroups(client, argv.query, argv.maxResults);
-              const rows = (found.groups || []).map((g: any) => [g.groupId || '', g.name || '']);
+              const rows = (found.groups || []).map((g) => [g.groupId || '', g.name || '']);
               printTable(['GROUP_ID', 'NAME'], rows);
             }
           ),
@@ -1921,7 +1947,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 }
                 if (isJSONOutput(argv)) { outputJSON(result); return; }
 
-                const rows = (result.values || []).map((d: any) => [d.id || '', d.name || '', d.owner?.displayName || '']);
+                const rows = (result.values || []).map((d) => [d.id || '', d.name || '', d.owner?.displayName || '']);
                 printTable(['ID', 'NAME', 'OWNER'], rows);
                 printPaginationHint((result.values || []).length, result.total || 0);
                 return;
@@ -1937,7 +1963,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
               }
               if (isJSONOutput(argv)) { outputJSON(result); return; }
 
-              const rows = (result.dashboards || []).map((d: any) => [d.id || '', d.name || '', d.owner?.displayName || '']);
+              const rows = (result.dashboards || []).map((d) => [d.id || '', d.name || '', d.owner?.displayName || '']);
               printTable(['ID', 'NAME', 'OWNER'], rows);
               printPaginationHint((result.dashboards || []).length, result.total || 0);
             }
@@ -1969,7 +1995,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .demandOption(['name']),
             async (argv: any) => {
               const client = getJiraClient(argv);
-              const body: any = { name: argv.name };
+              const body: Partial<Dashboard> = { name: argv.name };
               if (argv.description) body.description = argv.description;
               const d = await jiraSchemes.createDashboard(client, body);
               console.log(`Dashboard created: ${d.name} (ID: ${d.id})`);
@@ -1986,7 +2012,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .option('description', { type: 'string', description: 'Dashboard description' }),
             async (argv: any) => {
               const client = getJiraClient(argv);
-              const body: any = {};
+              const body: Partial<Dashboard> = {};
               if (argv.name) body.name = argv.name;
               if (argv.description) body.description = argv.description;
               const d = await jiraSchemes.updateDashboard(client, argv.id, body);
@@ -2016,7 +2042,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .demandOption(['name']),
             async (argv: any) => {
               const client = getJiraClient(argv);
-              const body: any = { name: argv.name };
+              const body: Partial<Dashboard> = { name: argv.name };
               if (argv.description) body.description = argv.description;
               const d = await jiraSchemes.copyDashboard(client, argv.id, body);
               console.log(`Dashboard copied: ${d.name} (ID: ${d.id})`);
@@ -2040,7 +2066,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
                     const gadgets = await jiraSchemes.getDashboardGadgets(client, argv['dashboard-id']);
                     if (isJSONOutput(argv)) { outputJSON(gadgets); return; }
 
-                    const rows = (gadgets.gadgets || []).map((g: any) => [
+                    const rows = (gadgets.gadgets || []).map((g) => [
                       String(g.id || ''),
                       g.title || '',
                       g.moduleKey || '',
@@ -2061,7 +2087,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
                       .option('title', { type: 'string', description: 'Gadget title', default: '' }),
                   async (argv: any) => {
                     const client = getJiraClient(argv);
-                    const body: any = {};
+                    const body: Partial<DashboardGadget> = {};
                     if (argv.moduleKey) body.moduleKey = argv.moduleKey;
                     if (argv.uri) body.uri = argv.uri;
                     if (argv.title) body.title = argv.title;
@@ -2080,7 +2106,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
                       .option('title', { type: 'string', description: 'Gadget title', default: '' }),
                   async (argv: any) => {
                     const client = getJiraClient(argv);
-                    const body: any = {};
+                    const body: Partial<DashboardGadget> = {};
                     if (argv.title) body.title = argv.title;
                     await jiraSchemes.updateDashboardGadget(client, argv['dashboard-id'], argv['gadget-id'], body);
                     console.log(`Gadget ${argv['gadget-id']} updated on dashboard ${argv['dashboard-id']}`);
@@ -2122,7 +2148,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
             async (argv: any) => {
               const client = getJiraClient(argv);
               const roles = await jiraSchemes.getAllRoles(client);
-              const rows = (roles || []).map((r: any) => [String(r.id || ''), r.name || '', r.description || '']);
+              const rows = (roles || []).map((r) => [String(r.id || ''), r.name || '', r.description || '']);
               printTable(['ID', 'NAME', 'DESCRIPTION'], rows);
             }
           )
@@ -2148,7 +2174,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .demandOption(['name']),
             async (argv: any) => {
               const client = getJiraClient(argv);
-              const body: any = { name: argv.name };
+              const body: Partial<ProjectRole> = { name: argv.name };
               if (argv.description) body.description = argv.description;
               const role = await jiraSchemes.createRole(client, body);
               outputJSON(role);
@@ -2239,7 +2265,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
             async (argv: any) => {
               const client = getJiraClient(argv);
               const types = await jiraAdmin.getIssueLinkTypes(client);
-              const rows = (types || []).map((t: any) => [t.id || '', t.name || '', t.inward || '', t.outward || '']);
+              const rows = (types || []).map((t) => [t.id || '', t.name || '', t.inward || '', t.outward || '']);
               printTable(['ID', 'NAME', 'INWARD', 'OUTWARD'], rows);
             }
           )
@@ -2282,7 +2308,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .option('outward', { type: 'string', description: 'Outward description' }),
             async (argv: any) => {
               const client = getJiraClient(argv);
-              const lt: any = {};
+              const lt: Partial<IssueLinkType> = {};
               if (argv.name !== undefined) lt.name = argv.name;
               if (argv.inward !== undefined) lt.inward = argv.inward;
               if (argv.outward !== undefined) lt.outward = argv.outward;
@@ -2334,7 +2360,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
                   result = next;
                 }
               }
-              const rows = allValues.map((s: any) => [String(s.id || ''), s.name || '', s.description || '']);
+              const rows = allValues.map((s) => [String(s.id || ''), s.name || '', s.description || '']);
               printTable(['ID', 'NAME', 'DESCRIPTION'], rows);
             }
           )
@@ -2349,7 +2375,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .demandOption(['name']),
             async (argv: any) => {
               const client = getJiraClient(argv);
-              const body: any = { name: argv.name };
+              const body: Partial<Screen> = { name: argv.name };
               if (argv.description) body.description = argv.description;
               const screen = await jiraSchemes.createScreen(client, body);
               outputJSON(screen);
@@ -2374,7 +2400,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
             async (argv: any) => {
               const client = getJiraClient(argv);
               const tabs = await jiraSchemes.getScreenTabs(client, argv['screen-id']);
-              const rows = (tabs || []).map((t: any) => [String(t.id || ''), t.name || '']);
+              const rows = (tabs || []).map((t) => [String(t.id || ''), t.name || '']);
               printTable(['ID', 'NAME'], rows);
             }
           )
@@ -2389,7 +2415,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
             async (argv: any) => {
               const client = getJiraClient(argv);
               const fields = await jiraSchemes.getScreenTabFields(client, argv['screen-id'], argv['tab-id']);
-              const rows = (fields || []).map((f: any) => [f.id || '', f.name || '']);
+              const rows = (fields || []).map((f) => [f.id || '', f.name || '']);
               printTable(['ID', 'NAME'], rows);
             }
           ),
@@ -2413,7 +2439,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
             async (argv: any) => {
               const client = getJiraClient(argv);
               const workflows = await jiraSchemes.getWorkflows(client);
-              const rows = (workflows || []).map((wf: any) => [wf.name || '', wf.description || '', String(wf.isDefault)]);
+              const rows = (workflows || []).map((wf) => [wf.name || '', wf.description || '', String(wf.isDefault)]);
               printTable(['NAME', 'DESCRIPTION', 'DEFAULT'], rows);
             }
           ),
@@ -2450,7 +2476,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
                   result = next;
                 }
               }
-              const rows = allValues.map((s: any) => [String(s.id || ''), s.name || '', s.description || '']);
+              const rows = allValues.map((s) => [String(s.id || ''), s.name || '', s.description || '']);
               printTable(['ID', 'NAME', 'DESCRIPTION'], rows);
             }
           )
@@ -2476,7 +2502,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .demandOption(['name']),
             async (argv: any) => {
               const client = getJiraClient(argv);
-              const body: any = { name: argv.name };
+              const body: Partial<WorkflowScheme> = { name: argv.name };
               if (argv.description) body.description = argv.description;
               const scheme = await jiraSchemes.createWorkflowScheme(client, body);
               outputJSON(scheme);
@@ -2493,7 +2519,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .option('description', { type: 'string', description: 'Scheme description' }),
             async (argv: any) => {
               const client = getJiraClient(argv);
-              const body: any = {};
+              const body: Partial<WorkflowScheme> = {};
               if (argv.name !== undefined) body.name = argv.name;
               if (argv.description !== undefined) body.description = argv.description;
               const scheme = await jiraSchemes.updateWorkflowScheme(client, argv.id, body);
@@ -2531,7 +2557,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
             async (argv: any) => {
               const client = getJiraClient(argv);
               const schemes = await jiraSchemes.getPermissionSchemes(client);
-              const rows = (schemes || []).map((s: any) => [String(s.id || ''), s.name || '']);
+              const rows = (schemes || []).map((s) => [String(s.id || ''), s.name || '']);
               printTable(['ID', 'NAME'], rows);
             }
           )
@@ -2557,7 +2583,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .demandOption(['name']),
             async (argv: any) => {
               const client = getJiraClient(argv);
-              const body: any = { name: argv.name };
+              const body: Partial<PermissionScheme> = { name: argv.name };
               if (argv.description) body.description = argv.description;
               const scheme = await jiraSchemes.createPermissionScheme(client, body);
               outputJSON(scheme);
@@ -2607,7 +2633,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
                   result = next;
                 }
               }
-              const rows = allValues.map((s: any) => [String(s.id || ''), s.name || '']);
+              const rows = allValues.map((s) => [String(s.id || ''), s.name || '']);
               printTable(['ID', 'NAME'], rows);
             }
           )
@@ -2633,7 +2659,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .demandOption(['name']),
             async (argv: any) => {
               const client = getJiraClient(argv);
-              const body: any = { name: argv.name };
+              const body: Partial<NotificationScheme> = { name: argv.name };
               if (argv.description) body.description = argv.description;
               const scheme = await jiraSchemes.createNotificationScheme(client, body);
               outputJSON(scheme);
@@ -2670,7 +2696,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
             async (argv: any) => {
               const client = getJiraClient(argv);
               const schemes = await jiraSchemes.getIssueSecuritySchemes(client);
-              const rows = (schemes || []).map((s: any) => [String(s.id || ''), s.name || '']);
+              const rows = (schemes || []).map((s) => [String(s.id || ''), s.name || '']);
               printTable(['ID', 'NAME'], rows);
             }
           )
@@ -2696,7 +2722,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .demandOption(['name']),
             async (argv: any) => {
               const client = getJiraClient(argv);
-              const body: any = { name: argv.name };
+              const body: Partial<IssueSecurityScheme> = { name: argv.name };
               if (argv.description) body.description = argv.description;
               const scheme = await jiraSchemes.createIssueSecurityScheme(client, body);
               outputJSON(scheme);
@@ -2746,7 +2772,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
                   result = next;
                 }
               }
-              const rows = allValues.map((fc: any) => [String(fc.id || ''), fc.name || '', String(fc.isDefault)]);
+              const rows = allValues.map((fc) => [String(fc.id || ''), fc.name || '', String(fc.isDefault)]);
               printTable(['ID', 'NAME', 'DEFAULT'], rows);
             }
           )
@@ -2761,7 +2787,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .demandOption(['name']),
             async (argv: any) => {
               const client = getJiraClient(argv);
-              const body: any = { name: argv.name };
+              const body: Partial<FieldConfiguration> = { name: argv.name };
               if (argv.description) body.description = argv.description;
               const fc = await jiraSchemes.createFieldConfiguration(client, body);
               outputJSON(fc);
@@ -2811,7 +2837,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
                   result = next;
                 }
               }
-              const rows = allValues.map((s: any) => [String(s.id || ''), s.name || '']);
+              const rows = allValues.map((s) => [String(s.id || ''), s.name || '']);
               printTable(['ID', 'NAME'], rows);
             }
           )
@@ -2826,7 +2852,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .demandOption(['name']),
             async (argv: any) => {
               const client = getJiraClient(argv);
-              const body: any = { name: argv.name };
+              const body: Partial<IssueTypeScheme> = { name: argv.name };
               if (argv.description) body.description = argv.description;
               const scheme = await jiraSchemes.createIssueTypeScheme(client, body);
               outputJSON(scheme);
@@ -2890,7 +2916,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
                   result = next;
                 }
               }
-              const rows = allValues.map((wh: any) => [
+              const rows = allValues.map((wh) => [
                 String(wh.id || ''),
                 wh.jqlFilter || '',
                 (wh.events || []).join(', '),
@@ -2965,13 +2991,13 @@ export function registerJiraCommands(yargs: Argv): Argv {
         let records = await jiraAdmin.getAuditRecords(client, argv.startAt, argv.maxResults);
         let allRecords = records.records || [];
         if (argv.all) {
-          while (allRecords.length < records.total) {
+          while (allRecords.length < (records.total ?? 0)) {
             const next = await jiraAdmin.getAuditRecords(client, argv.startAt + allRecords.length, argv.maxResults);
             if (!next.records || next.records.length === 0) break;
             allRecords = allRecords.concat(next.records);
           }
         }
-        const rows = allRecords.map((r: any) => [String(r.id || ''), r.summary || '', r.created || '', r.category || '']);
+        const rows = allRecords.map((r) => [String(r.id || ''), r.summary || '', r.created || '', r.category || '']);
         printTable(['ID', 'SUMMARY', 'CREATED', 'CATEGORY'], rows);
       }
     )
@@ -3007,7 +3033,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .option('dismissible', { type: 'boolean', description: 'Allow dismissing the banner' }),
             async (argv: any) => {
               const client = getJiraClient(argv);
-              const banner: any = {};
+              const banner: Partial<AnnouncementBanner> = {};
               if (argv.message !== undefined) banner.message = argv.message;
               if (argv.enabled !== undefined) banner.isEnabled = argv.enabled;
               if (argv.dismissible !== undefined) banner.isDismissible = argv.dismissible;
@@ -3053,7 +3079,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
               const client = getJiraClient(argv);
               const project = defaultProject(argv);
               const perms = await jiraAdmin.getMyPermissions(client, project, argv.issue);
-              const rows = Object.values(perms || {}).map((p: any) => [p.key || '', p.name || '', String(p.havePermission)]);
+              const rows = Object.values(perms || {}).map((p: UserPermission) => [p.key || '', p.name || '', String(p.havePermission)]);
               printTable(['KEY', 'NAME', 'HAVE_PERMISSION'], rows);
             }
           )
@@ -3065,7 +3091,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
             async (argv: any) => {
               const client = getJiraClient(argv);
               const perms = await jiraAdmin.getAllPermissions(client);
-              const rows = Object.values(perms || {}).map((p: any) => [p.key || '', p.name || '', String(p.havePermission)]);
+              const rows = Object.values(perms || {}).map((p: UserPermission) => [p.key || '', p.name || '', String(p.havePermission)]);
               printTable(['KEY', 'NAME', 'HAVE_PERMISSION'], rows);
             }
           ),
@@ -3123,7 +3149,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
             async (argv: any) => {
               const client = getJiraClient(argv);
               const cats = await jiraProjects.getProjectCategories(client);
-              const rows = (cats || []).map((c: any) => [c.id || '', c.name || '', c.description || '']);
+              const rows = (cats || []).map((c) => [c.id || '', c.name || '', c.description || '']);
               printTable(['ID', 'NAME', 'DESCRIPTION'], rows);
             }
           )
@@ -3149,7 +3175,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .demandOption(['name']),
             async (argv: any) => {
               const client = getJiraClient(argv);
-              const cat: any = { name: argv.name };
+              const cat: Partial<ProjectCategory> = { name: argv.name };
               if (argv.description) cat.description = argv.description;
               const result = await jiraProjects.createProjectCategory(client, cat);
               outputJSON(result);
@@ -3166,7 +3192,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .option('description', { type: 'string', description: 'Category description' }),
             async (argv: any) => {
               const client = getJiraClient(argv);
-              const cat: any = {};
+              const cat: Partial<ProjectCategory> = {};
               if (argv.name !== undefined) cat.name = argv.name;
               if (argv.description !== undefined) cat.description = argv.description;
               const result = await jiraProjects.updateProjectCategory(client, argv.id, cat);
@@ -3229,7 +3255,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
             async (argv: any) => {
               const client = getJiraClient(argv);
               const project = defaultProject(argv);
-              const body: any = { project, name: argv.name };
+              const body: Partial<ProjectComponent> & { leadAccountId?: string } = { project, name: argv.name };
               if (argv.description) body.description = argv.description;
               if (argv.lead) body.leadAccountId = argv.lead;
               if (argv.assigneeType) body.assigneeType = argv.assigneeType;
@@ -3249,7 +3275,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .option('lead', { type: 'string', description: 'Lead account ID' }),
             async (argv: any) => {
               const client = getJiraClient(argv);
-              const body: any = {};
+              const body: Partial<ProjectComponent> & { leadAccountId?: string } = {};
               if (argv.name) body.name = argv.name;
               if (argv.description) body.description = argv.description;
               if (argv.lead) body.leadAccountId = argv.lead;
@@ -3315,7 +3341,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .demandOption(['project-id', 'name']),
             async (argv: any) => {
               const client = getJiraClient(argv);
-              const ver: any = { projectId: argv.projectId, name: argv.name };
+              const ver: Partial<Version> = { projectId: argv.projectId, name: argv.name };
               if (argv.description) ver.description = argv.description;
               if (argv.startDate) ver.startDate = argv.startDate;
               if (argv.releaseDate) ver.releaseDate = argv.releaseDate;
@@ -3386,7 +3412,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
               const fields = await jiraSchemes.getFields(client);
               if (isJSONOutput(argv)) {
                 if (argv.custom) {
-                  outputJSON((fields || []).filter((f: any) => f.custom));
+                  outputJSON((fields || []).filter((f) => f.custom));
                 } else {
                   outputJSON(fields);
                 }
@@ -3394,8 +3420,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
               }
 
               const rows = (fields || [])
-                .filter((f: any) => !argv.custom || f.custom)
-                .map((f: any) => [f.id || '', f.name || '', f.schema?.type || '', String(f.custom)]);
+                .filter((f) => !argv.custom || f.custom)
+                .map((f) => [f.id || '', f.name || '', f.schema?.type || '', String(f.custom)]);
               printTable(['ID', 'NAME', 'TYPE', 'CUSTOM'], rows);
             }
           )
@@ -3412,10 +3438,10 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .demandOption(['name', 'type']),
             async (argv: any) => {
               const client = getJiraClient(argv);
-              const body: any = { name: argv.name, type: argv.type };
+              const body: Record<string, unknown> = { name: argv.name, type: argv.type };
               if (argv.description) body.description = argv.description;
               if (argv.searchKey) body.searcherKey = argv.searchKey;
-              const field = await jiraSchemes.createCustomField(client, body);
+              const field = await jiraSchemes.createCustomField(client, body as Partial<Field>);
               console.log(`Field created: ${field.name} (ID: ${field.id})`);
             }
           )
@@ -3502,7 +3528,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
             async (argv: any) => {
               const client = getJiraClient(argv);
               const types = await jiraAdmin.getAllIssueTypes(client);
-              const rows = (types || []).map((t: any) => [t.id || '', t.name || '', String(t.subtask), t.description || '']);
+              const rows = (types || []).map((t) => [t.id || '', t.name || '', String(t.subtask), t.description || '']);
               printTable(['ID', 'NAME', 'SUBTASK', 'DESCRIPTION'], rows);
             }
           )
@@ -3534,7 +3560,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .demandOption(['name']),
             async (argv: any) => {
               const client = getJiraClient(argv);
-              const body: any = { name: argv.name, type: argv.type };
+              const body: Partial<IssueType> & { type?: string } = { name: argv.name, type: argv.type };
               if (argv.description) body.description = argv.description;
               const it = await jiraAdmin.createIssueType(client, body);
               console.log(`Issue type created: ${it.name} (ID: ${it.id})`);
@@ -3551,7 +3577,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .option('description', { type: 'string', description: 'Issue type description' }),
             async (argv: any) => {
               const client = getJiraClient(argv);
-              const body: any = {};
+              const body: Partial<IssueType> = {};
               if (argv.name) body.name = argv.name;
               if (argv.description) body.description = argv.description;
               const it = await jiraAdmin.updateIssueType(client, argv.id, body);
@@ -3589,7 +3615,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
             async (argv: any) => {
               const client = getJiraClient(argv);
               const priorities = await jiraAdmin.getAllPriorities(client);
-              const rows = (priorities || []).map((p: any) => [p.id || '', p.name || '', p.description || '']);
+              const rows = (priorities || []).map((p) => [p.id || '', p.name || '', p.description || '']);
               printTable(['ID', 'NAME', 'DESCRIPTION'], rows);
             }
           )
@@ -3621,7 +3647,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .demandOption(['name']),
             async (argv: any) => {
               const client = getJiraClient(argv);
-              const body: any = { name: argv.name, statusColor: argv.statusColor };
+              const body: Partial<Priority> = { name: argv.name, statusColor: argv.statusColor };
               if (argv.description) body.description = argv.description;
               const p = await jiraAdmin.createPriority(client, body);
               console.log(`Priority created: ${p.name} (ID: ${p.id})`);
@@ -3638,7 +3664,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .option('description', { type: 'string', description: 'Priority description' }),
             async (argv: any) => {
               const client = getJiraClient(argv);
-              const body: any = {};
+              const body: Partial<Priority> = {};
               if (argv.name) body.name = argv.name;
               if (argv.description) body.description = argv.description;
               const p = await jiraAdmin.updatePriority(client, argv.id, body);
@@ -3676,7 +3702,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
             async (argv: any) => {
               const client = getJiraClient(argv);
               const resolutions = await jiraAdmin.getAllResolutions(client);
-              const rows = (resolutions || []).map((r: any) => [r.id || '', r.name || '', r.description || '']);
+              const rows = (resolutions || []).map((r) => [r.id || '', r.name || '', r.description || '']);
               printTable(['ID', 'NAME', 'DESCRIPTION'], rows);
             }
           )
@@ -3706,7 +3732,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .demandOption(['name']),
             async (argv: any) => {
               const client = getJiraClient(argv);
-              const body: any = { name: argv.name };
+              const body: Partial<Resolution> = { name: argv.name };
               if (argv.description) body.description = argv.description;
               const r = await jiraAdmin.createResolution(client, body);
               console.log(`Resolution created: ${r.name} (ID: ${r.id})`);
@@ -3723,7 +3749,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .option('description', { type: 'string', description: 'Resolution description' }),
             async (argv: any) => {
               const client = getJiraClient(argv);
-              const body: any = {};
+              const body: Partial<Resolution> = {};
               if (argv.name) body.name = argv.name;
               if (argv.description) body.description = argv.description;
               const r = await jiraAdmin.updateResolution(client, argv.id, body);
@@ -3761,7 +3787,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
             async (argv: any) => {
               const client = getJiraClient(argv);
               const statuses = await jiraAdmin.getAllStatuses(client);
-              const rows = (statuses || []).map((s: any) => [s.id || '', s.name || '', s.statusCategory?.name || '']);
+              const rows = (statuses || []).map((s) => [s.id || '', s.name || '', s.statusCategory?.name || '']);
               printTable(['ID', 'NAME', 'CATEGORY'], rows);
             }
           )
@@ -3789,7 +3815,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
             async (argv: any) => {
               const client = getJiraClient(argv);
               const categories = await jiraAdmin.getStatusCategories(client);
-              const rows = (categories || []).map((c: any) => [
+              const rows = (categories || []).map((c) => [
                 String(c.id || ''),
                 c.key || '',
                 c.name || '',

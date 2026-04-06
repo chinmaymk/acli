@@ -1,31 +1,25 @@
 import { get, post, deleteNoContent, getAll, addPaginationParams } from './client.js';
-import type { BitbucketClient, PaginationOptions } from './client.js';
+import type { BitbucketClient, PaginationOptions, PaginatedResponse } from './client.js';
+import type { Snippet, CreateSnippetRequest } from './types.js';
 
-export interface CreateSnippetRequest {
-  title: string;
-  is_private?: boolean;
-  scm?: string;
-  files?: Record<string, { content: string }>;
-}
-
-export async function listSnippets(client: BitbucketClient, workspace: string, opts?: PaginationOptions): Promise<unknown[]> {
+export async function listSnippets(client: BitbucketClient, workspace: string, opts?: PaginationOptions): Promise<Snippet[]> {
   let path = `/snippets/${encodeURIComponent(workspace)}`;
   path = addPaginationParams(path, opts);
 
   if (opts?.all) {
-    return getAll(client, path);
+    return getAll<Snippet>(client, path);
   }
 
-  const page = await get(client, path);
+  const page = await get<PaginatedResponse<Snippet>>(client, path);
   return page.values ?? [];
 }
 
-export async function getSnippet(client: BitbucketClient, workspace: string, encodedID: string): Promise<any> {
+export async function getSnippet(client: BitbucketClient, workspace: string, encodedID: string): Promise<Snippet> {
   const path = `/snippets/${encodeURIComponent(workspace)}/${encodeURIComponent(encodedID)}`;
   return get(client, path);
 }
 
-export async function createSnippet(client: BitbucketClient, workspace: string, req: CreateSnippetRequest): Promise<any> {
+export async function createSnippet(client: BitbucketClient, workspace: string, req: CreateSnippetRequest): Promise<Snippet> {
   const path = `/snippets/${encodeURIComponent(workspace)}`;
   return post(client, path, req);
 }
