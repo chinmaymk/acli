@@ -365,7 +365,7 @@ export async function deleteIssueLink(client: JiraClient, linkId: string): Promi
  * Returns all issue link types.
  */
 export async function getIssueLinkTypes(client: JiraClient): Promise<IssueLinkType[]> {
-  const result = await get(client, '/rest/api/3/issueLinkType');
+  const result = await get<{ issueLinkTypes: IssueLinkType[] }>(client, '/rest/api/3/issueLinkType');
   return result.issueLinkTypes;
 }
 
@@ -741,7 +741,7 @@ export async function getMyPermissions(
   const params: Record<string, string> = {};
   if (projectKey) params.projectKey = projectKey;
   if (issueKey) params.issueKey = issueKey;
-  const result = await get(client, '/rest/api/3/mypermissions', params);
+  const result = await get<{ permissions: Record<string, UserPermission> }>(client, '/rest/api/3/mypermissions', params);
   return result.permissions;
 }
 
@@ -749,7 +749,7 @@ export async function getMyPermissions(
  * Returns all permissions in the system.
  */
 export async function getAllPermissions(client: JiraClient): Promise<Record<string, UserPermission>> {
-  const result = await get(client, '/rest/api/3/permissions');
+  const result = await get<{ permissions: Record<string, UserPermission> }>(client, '/rest/api/3/permissions');
   return result.permissions;
 }
 

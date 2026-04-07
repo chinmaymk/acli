@@ -15,6 +15,159 @@ import * as jiraAdmin from '../internal/jira/admin.js';
 import * as jiraSchemes from '../internal/jira/schemes.js';
 import { render as renderADF } from '../internal/adf/render.js';
 import type { Argv } from 'yargs';
+import type { ADFDocument, JsonBody } from '../internal/types.js';
+
+// ============================================================================
+// JiraArgv — a single, narrow-typed argv shape that covers every option and
+// positional used by the jira subcommands. This replaces the older loose
+// handler signatures without losing runtime behaviour.
+//
+// Design notes:
+//   - All fields are optional: yargs only populates the keys that the active
+//     command declares, so per-handler unions would be noisy. Handlers simply
+//     never touch fields they didn't declare.
+//   - Required positionals / options-with-defaults / demandOption options
+//     still arrive as populated at runtime, so accessing e.g. `argv.jql` in
+//     a handler that declared `--jql` as required is safe.
+//   - BaseArgv's common flags (profile, output, json, page, pagelen) are
+//     mirrored so `getJiraClient`/`defaultProject`/etc. accept us.
+//   - Runtime values for array options arrive as `string[]`, so we use that
+//     narrow type (yargs `type: 'array'` widens to `(string|number)[]` in
+//     the type inference but every usage here treats them as string[]).
+//   - `project` is kept as `string`. The one array-typed variant (issue
+//     createmeta) narrows locally with its own interface.
+// ============================================================================
+
+interface JiraArgv {
+  // BaseArgv-compatible common flags
+  profile?: string;
+  output?: string;
+  json?: boolean;
+  page?: number;
+  pagelen?: number;
+
+  // --- common options (string). Non-optional at the type level: handlers
+  //     only touch options they declared, and declared options either have
+  //     a default or are demanded, so at runtime they are populated. The
+  //     double cast via Partial<JiraArgv> at the handler entry relaxes
+  //     the required-field overlap check. ---
+  jql: string;
+  assignee: string;
+  status: string;
+  summary: string;
+  description: string;
+  priority: string;
+  type: string;
+  body: string;
+  query: string;
+  name: string;
+  email: string;
+  lead: string;
+  goal: string;
+  state: string;
+  key: string;
+  // `id` is typed as string here even though ~10 subcommands declare the
+  // positional as `{ type: 'number' }`. Those handlers coerce locally with
+  // `Number(argv.id)` where the API client needs a numeric id.
+  id: string;
+  title: string;
+  uri: string;
+  url: string;
+  issue: string;
+  inward: string;
+  outward: string;
+  subject: string;
+  message: string;
+  started: string;
+
+  // camelCase aliases for kebab-case options
+  accountId: string;
+  assigneeType: string;
+  displayName: string;
+  endDate: string;
+  issueKey: string;
+  moduleKey: string;
+  releaseDate: string;
+  searchKey: string;
+  startDate: string;
+  statusColor: string;
+  textBody: string;
+  timeSpent: string;
+
+  // --- common options (boolean) ---
+  all: boolean;
+  archived: boolean;
+  custom: boolean;
+  dismissible: boolean;
+  enabled: boolean;
+  favourite: boolean;
+  favourites: boolean;
+  mine: boolean;
+  released: boolean;
+  deleteSubtasks: boolean;
+
+  // --- common options (number) ---
+  maxResults: number;
+  startAt: number;
+  boardId: number;
+  projectId: number;
+
+  // --- common options (array-of-string) ---
+  labels: string[];
+  components: string[];
+  fields: string[];
+
+  // --- positionals (kebab-case access). Always present at runtime when the
+  //     handler is invoked, so these are non-optional despite yargs typing
+  //     them as `| undefined` in its inferred types. ---
+  'issue-key': string;
+  'issue-keys': string[];
+  'comment-id': string;
+  'worklog-id': string;
+  'link-id': string;
+  'project-key': string;
+  'board-id': number;
+  'sprint-id': number;
+  'epic-id-or-key': string;
+  'filter-id': string;
+  'account-id': string;
+  'dashboard-id': string;
+  'gadget-id': string;
+  'group-name': string;
+  'role-id': number;
+  'screen-id': number;
+  'tab-id': number;
+  'task-id': string;
+  'file-path': string;
+  'id-or-name': string;
+
+  // --- kebab-case option keys used without camelCase aliasing ---
+  'max-results': number;
+  'start-at': number;
+  'text-body': string;
+  'time-spent': string;
+  'display-name': string;
+  'project-id': number;
+  'inward-issue': string;
+  'outward-issue': string;
+  'module-key': string;
+  'status-color': string;
+  'search-key': string;
+  'release-date': string;
+  'start-date': string;
+  'end-date': string;
+  'assignee-type': string;
+  'delete-subtasks': boolean;
+
+  // project — single key (most commands). The createmeta handler uses a
+  // local variant that accepts string[].
+  project: string;
+}
+
+// Variant for `issue createmeta` where --project is declared as an array.
+interface JiraCreateMetaArgv extends Omit<JiraArgv, 'project'> {
+  project?: string[];
+}
 import type {
   AnnouncementBanner,
   Dashboard,
@@ -69,7 +222,7 @@ function printTable(headers: string[], rows: string[][]): void {
 // ADF body builder (mirrors the Go pattern)
 // ============================================================================
 
-function adfDoc(text: string): object {
+function adfDoc(text: string): ADFDocument {
   return {
     type: 'doc',
     version: 1,
@@ -112,7 +265,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .option('max-results', { type: 'number', description: 'Maximum number of results per page', default: 50 })
                 .option('start-at', { type: 'number', description: 'Index of the first result', default: 0 })
                 .option('all', { type: 'boolean', description: 'Fetch all pages', default: false }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               let jql = argv.jql;
               const project = defaultProject(argv);
@@ -160,7 +314,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'get <issue-key>',
             'Get issue details',
             (y2) => y2.positional('issue-key', { type: 'string' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const issue = await jiraIssues.getIssue(client, argv['issue-key'], undefined, undefined);
 
@@ -203,12 +358,13 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .option('labels', { type: 'array', description: 'Labels', default: [] })
                 .option('components', { type: 'array', description: 'Component names', default: [] })
                 .demandOption(['summary']),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const project = defaultProject(argv);
               if (!project) throw new Error("--project is required (or set a default with 'acli config set-defaults')");
 
-              const fields: Record<string, unknown> = {
+              const fields: Record<string, JsonBody> = {
                 project: { key: project },
                 issuetype: { name: argv.type },
                 summary: argv.summary,
@@ -240,9 +396,10 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .option('priority', { type: 'string', description: 'Priority name' })
                 .option('labels', { type: 'array', description: 'Labels' })
                 .option('components', { type: 'array', description: 'Component names' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
-              const fields: Record<string, unknown> = {};
+              const fields: Record<string, JsonBody> = {};
 
               if (argv.summary !== undefined) fields.summary = argv.summary;
               if (argv.description !== undefined) fields.description = adfDoc(argv.description);
@@ -268,7 +425,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
               y2
                 .positional('issue-key', { type: 'string' })
                 .option('delete-subtasks', { type: 'boolean', description: 'Also delete subtasks', default: false }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               await jiraIssues.deleteIssue(client, argv['issue-key'], argv.deleteSubtasks);
               outputResult(argv, 'deleted', argv['issue-key'], `Issue ${argv['issue-key']} deleted`, null);
@@ -283,7 +441,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
               y2
                 .positional('issue-key', { type: 'string' })
                 .positional('account-id', { type: 'string' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               let accountID = argv['account-id'];
               if (accountID === '-1' || accountID === 'none') accountID = '';
@@ -305,9 +464,10 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .positional('issue-key', { type: 'string' })
                 .option('id', { type: 'string', description: 'Transition ID', default: '' })
                 .option('status', { type: 'string', description: 'Target status name (case-insensitive)', default: '' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
-              let transitionID = argv.id;
+              let transitionID: string | undefined = argv.id;
               const statusName = argv.status;
 
               if (!transitionID && !statusName) throw new Error('either --id or --status must be provided');
@@ -341,7 +501,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'transitions <issue-key>',
             'List available transitions for an issue',
             (y2) => y2.positional('issue-key', { type: 'string' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const resp = await jiraIssues.getIssueTransitions(client, argv['issue-key']);
 
@@ -373,7 +534,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                       .option('max-results', { type: 'number', default: 50 })
                       .option('start-at', { type: 'number', default: 0 })
                       .option('all', { type: 'boolean', default: false }),
-                  async (argv: any) => {
+                  async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
                     const client = getJiraClient(argv);
                     let page = await jiraIssues.getIssueComments(client, argv['issue-key'], argv.startAt, argv.maxResults);
                     if (argv.all) {
@@ -406,7 +568,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                       .positional('issue-key', { type: 'string' })
                       .option('body', { type: 'string', description: 'Comment body text (required)' })
                       .demandOption(['body']),
-                  async (argv: any) => {
+                  async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
                     const client = getJiraClient(argv);
                     const comment = await jiraIssues.addIssueComment(client, argv['issue-key'], adfDoc(argv.body), undefined);
                     outputResult(argv, 'created', comment.id!, `Comment ${comment.id} added to ${argv['issue-key']}`, comment);
@@ -420,7 +583,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                     y3
                       .positional('issue-key', { type: 'string' })
                       .positional('comment-id', { type: 'string' }),
-                  async (argv: any) => {
+                  async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
                     const client = getJiraClient(argv);
                     const comment = await jiraIssues.getIssueComment(client, argv['issue-key'], argv['comment-id']);
                     if (isJSONOutput(argv)) { outputJSON(comment); return; }
@@ -439,7 +603,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                     y3
                       .positional('issue-key', { type: 'string' })
                       .positional('comment-id', { type: 'string' }),
-                  async (argv: any) => {
+                  async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
                     const client = getJiraClient(argv);
                     await jiraIssues.deleteIssueComment(client, argv['issue-key'], argv['comment-id']);
                     outputResult(argv, 'deleted', argv['comment-id'], `Comment ${argv['comment-id']} deleted from ${argv['issue-key']}`, null);
@@ -465,7 +630,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                       .option('max-results', { type: 'number', default: 50 })
                       .option('start-at', { type: 'number', default: 0 })
                       .option('all', { type: 'boolean', default: false }),
-                  async (argv: any) => {
+                  async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
                     const client = getJiraClient(argv);
                     let page = await jiraIssues.getIssueWorklogs(client, argv['issue-key'], argv.startAt, argv.maxResults);
                     if (argv.all) {
@@ -499,7 +665,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                       .option('time-spent', { type: 'string', description: "Time spent (e.g. '2h', '30m') (required)" })
                       .option('started', { type: 'string', description: 'Start time (ISO datetime)', default: '' })
                       .demandOption(['time-spent']),
-                  async (argv: any) => {
+                  async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
                     const client = getJiraClient(argv);
                     const worklog: Partial<Worklog> = { timeSpent: argv['time-spent'] };
                     if (argv.started) worklog.started = argv.started;
@@ -515,7 +682,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                     y3
                       .positional('issue-key', { type: 'string' })
                       .positional('worklog-id', { type: 'string' }),
-                  async (argv: any) => {
+                  async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
                     const client = getJiraClient(argv);
                     await jiraIssues.deleteIssueWorklog(client, argv['issue-key'], argv['worklog-id']);
                     outputResult(argv, 'deleted', argv['worklog-id'], `Worklog ${argv['worklog-id']} deleted from ${argv['issue-key']}`, null);
@@ -532,12 +700,13 @@ export function registerJiraCommands(yargs: Argv): Argv {
               y2
                 .positional('issue-key', { type: 'string' })
                 .positional('file-path', { type: 'string' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const attachments = await jiraIssues.addIssueAttachment(client, argv['issue-key'], argv['file-path']);
               if (isJSONOutput(argv)) { outputJSON(attachments); return; }
               for (const a of attachments || []) {
-                console.log(`Attached: ${(a as any).filename} (id: ${(a as any).id})`);
+                console.log(`Attached: ${a.filename} (id: ${a.id})`);
               }
             }
           )
@@ -547,7 +716,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'vote <issue-key>',
             'Add your vote to an issue',
             (y2) => y2.positional('issue-key', { type: 'string' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               await jiraIssues.addIssueVote(client, argv['issue-key']);
               outputResult(argv, 'voted', argv['issue-key'], `Vote added to ${argv['issue-key']}`, null);
@@ -559,7 +729,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'unvote <issue-key>',
             'Remove your vote from an issue',
             (y2) => y2.positional('issue-key', { type: 'string' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               await jiraIssues.removeIssueVote(client, argv['issue-key']);
               outputResult(argv, 'unvoted', argv['issue-key'], `Vote removed from ${argv['issue-key']}`, null);
@@ -574,7 +745,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
               y2
                 .positional('issue-key', { type: 'string' })
                 .option('account-id', { type: 'string', description: 'Account ID of user to add as watcher (default: self)', default: '' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               await jiraIssues.addIssueWatcher(client, argv['issue-key'], argv.accountId);
               const msg = argv.accountId
@@ -593,7 +765,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .positional('issue-key', { type: 'string' })
                 .option('account-id', { type: 'string', description: 'Account ID of user to remove as watcher (required)' })
                 .demandOption(['account-id']),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               await jiraIssues.removeIssueWatcher(client, argv['issue-key'], argv.accountId);
               outputResult(argv, 'watch_removed', argv['issue-key'], `Watcher ${argv.accountId} removed from ${argv['issue-key']}`, null);
@@ -605,7 +778,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'watchers <issue-key>',
             'List watchers of an issue',
             (y2) => y2.positional('issue-key', { type: 'string' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const watches = await jiraIssues.getIssueWatchers(client, argv['issue-key']);
               if (isJSONOutput(argv)) { outputJSON(watches); return; }
@@ -626,7 +800,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .option('max-results', { type: 'number', default: 50 })
                 .option('start-at', { type: 'number', default: 0 })
                 .option('all', { type: 'boolean', default: false }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               let page = await jiraIssues.getIssueChangelog(client, argv['issue-key'], argv.startAt, argv.maxResults);
               if (argv.all) {
@@ -665,7 +840,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                   ['list <issue-key>', 'ls <issue-key>'],
                   'List remote links on an issue',
                   (y3) => y3.positional('issue-key', { type: 'string' }),
-                  async (argv: any) => {
+                  async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
                     const client = getJiraClient(argv);
                     const links = await jiraIssues.getIssueRemoteLinks(client, argv['issue-key']);
                     if (isJSONOutput(argv)) { outputJSON(links); return; }
@@ -687,7 +863,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                       .positional('issue-key', { type: 'string' })
                       .option('url', { type: 'string', description: 'URL of the remote link', default: '' })
                       .option('title', { type: 'string', description: 'Title of the remote link', default: '' }),
-                  async (argv: any) => {
+                  async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
                     const client = getJiraClient(argv);
                     const created = await jiraIssues.createIssueRemoteLink(client, argv['issue-key'], {
                       object: { url: argv.url, title: argv.title },
@@ -703,7 +880,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                     y3
                       .positional('issue-key', { type: 'string' })
                       .positional('link-id', { type: 'string' }),
-                  async (argv: any) => {
+                  async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
                     const client = getJiraClient(argv);
                     await jiraIssues.deleteIssueRemoteLink(client, argv['issue-key'], argv['link-id']);
                     outputResult(argv, 'deleted', argv['link-id'], `Remote link ${argv['link-id']} deleted from ${argv['issue-key']}`, null);
@@ -721,7 +899,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .positional('issue-key', { type: 'string' })
                 .option('subject', { type: 'string', description: 'Notification subject', default: '' })
                 .option('text-body', { type: 'string', description: 'Notification text body', default: '' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               await jiraIssues.notifyIssue(client, argv['issue-key'], { subject: argv.subject, textBody: argv['text-body'] });
               outputResult(argv, 'notified', argv['issue-key'], `Notification sent for ${argv['issue-key']}`, null);
@@ -733,9 +912,14 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'createmeta',
             'Get issue create metadata',
             (y2) => y2.option('project', { type: 'array', description: 'Project keys to filter', default: [] }),
-            async (argv: any) => {
-              const client = getJiraClient(argv);
-              const meta = await jiraIssues.getCreateMeta(client, argv.project || [], ['projects.issuetypes.fields']);
+            async (_a) => {
+              const argv = _a as Partial<JiraCreateMetaArgv> as JiraCreateMetaArgv;
+              // getJiraClient only reads BaseArgv fields (profile/output/json);
+              // createmeta's project is an array, not the single-project
+              // string BaseArgv/JiraArgv use, so we hand it a trimmed view.
+              const client = getJiraClient({ profile: argv.profile, output: argv.output, json: argv.json });
+              const projects: string[] = argv.project || [];
+              const meta = await jiraIssues.getCreateMeta(client, projects, ['projects.issuetypes.fields']);
               outputJSON(meta);
             }
           )
@@ -745,7 +929,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'editmeta <issue-key>',
             'Get issue edit metadata',
             (y2) => y2.positional('issue-key', { type: 'string' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const meta = await jiraIssues.getIssueEditMeta(client, argv['issue-key']);
               outputJSON(meta);
@@ -773,7 +958,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .option('max-results', { type: 'number', default: 50 })
                 .option('start-at', { type: 'number', default: 0 })
                 .option('all', { type: 'boolean', default: false }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               let result = await jiraProjects.searchProjects(client, argv.query, argv.startAt, argv.maxResults, '');
 
@@ -803,7 +989,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'get <project-key>',
             'Get project details',
             (y2) => y2.positional('project-key', { type: 'string' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const project = await jiraProjects.getProject(client, argv['project-key'], '');
               if (isJSONOutput(argv)) { outputJSON(project); return; }
@@ -835,7 +1022,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .option('lead', { type: 'string', description: 'Lead account ID', default: '' })
                 .option('description', { type: 'string', description: 'Project description', default: '' })
                 .demandOption(['key', 'name']),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const body: Partial<Project> & { leadAccountId?: string } = { key: argv.key, name: argv.name, projectTypeKey: argv.type };
               if (argv.lead) body.leadAccountId = argv.lead;
@@ -855,7 +1043,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .option('name', { type: 'string', description: 'Project name' })
                 .option('description', { type: 'string', description: 'Project description' })
                 .option('lead', { type: 'string', description: 'Lead account ID' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const body: Partial<Project> & { leadAccountId?: string } = {};
               if (argv.name !== undefined) body.name = argv.name;
@@ -873,7 +1062,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'delete <project-key>',
             'Delete a project',
             (y2) => y2.positional('project-key', { type: 'string' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               await jiraProjects.deleteProject(client, argv['project-key']);
               outputResult(argv, 'deleted', argv['project-key'], `Deleted project ${argv['project-key']}`, null);
@@ -884,7 +1074,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'components <project-key>',
             'List project components',
             (y2) => y2.positional('project-key', { type: 'string' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const components = await jiraProjects.getProjectComponents(client, argv['project-key']);
               const rows = (components || []).map((c) => [
@@ -901,7 +1092,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'versions <project-key>',
             'List project versions',
             (y2) => y2.positional('project-key', { type: 'string' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const versions = await jiraProjects.getProjectVersions(client, argv['project-key']);
               const rows = (versions || []).map((v) => {
@@ -918,7 +1110,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'statuses <project-key>',
             'List project statuses by issue type',
             (y2) => y2.positional('project-key', { type: 'string' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const issueTypes = await jiraProjects.getProjectStatuses(client, argv['project-key']);
               const rows: string[][] = [];
@@ -935,7 +1128,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'roles <project-key>',
             'List project roles',
             (y2) => y2.positional('project-key', { type: 'string' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const roles = await jiraProjects.getProjectRoles(client, argv['project-key']);
               const rows = Object.entries(roles || {}).map(([name, url]) => [name, url as string]);
@@ -947,7 +1141,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'archive <project-key>',
             'Archive a project',
             (y2) => y2.positional('project-key', { type: 'string' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               await jiraProjects.archiveProject(client, argv['project-key']);
               outputResult(argv, 'archived', argv['project-key'], `Archived project ${argv['project-key']}`, null);
@@ -958,7 +1153,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'restore <project-key>',
             'Restore an archived project',
             (y2) => y2.positional('project-key', { type: 'string' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               await jiraProjects.restoreProject(client, argv['project-key']);
               outputResult(argv, 'restored', argv['project-key'], `Restored project ${argv['project-key']}`, null);
@@ -969,7 +1165,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'features <project-key>',
             'List project features',
             (y2) => y2.positional('project-key', { type: 'string' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const resp = await jiraProjects.getProjectFeatures(client, argv['project-key']);
               const rows = (resp.features || []).map((f) => [
@@ -1003,7 +1200,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .option('start-at', { type: 'number', default: 0 })
                 .option('max-results', { type: 'number', default: 50 })
                 .option('all', { type: 'boolean', default: false }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const project = defaultProject(argv);
               let result = await jiraAgile.getBoards(client, argv.startAt, argv.maxResults, project, argv.type, argv.name);
@@ -1034,7 +1232,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'get <board-id>',
             'Get board details',
             (y2) => y2.positional('board-id', { type: 'number' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const board = await jiraAgile.getBoard(client, argv['board-id']);
               if (isJSONOutput(argv)) { outputJSON(board); return; }
@@ -1052,7 +1251,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             ['config <board-id>', 'configuration <board-id>'],
             'Get board configuration',
             (y2) => y2.positional('board-id', { type: 'number' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const config = await jiraAgile.getBoardConfiguration(client, argv['board-id']);
               outputJSON(config);
@@ -1069,7 +1269,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .option('max-results', { type: 'number', default: 50 })
                 .option('jql', { type: 'string', description: 'JQL filter', default: '' })
                 .option('all', { type: 'boolean', default: false }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               let result = await jiraAgile.getBoardIssues(client, argv['board-id'], argv.startAt, argv.maxResults, argv.jql);
 
@@ -1106,7 +1307,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .option('max-results', { type: 'number', default: 50 })
                 .option('jql', { type: 'string', description: 'JQL filter', default: '' })
                 .option('all', { type: 'boolean', default: false }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               let result = await jiraAgile.getBoardBacklog(client, argv['board-id'], argv.startAt, argv.maxResults, argv.jql);
 
@@ -1143,7 +1345,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .option('max-results', { type: 'number', default: 50 })
                 .option('state', { type: 'string', description: 'Filter by state (active, closed, future)', default: '' })
                 .option('all', { type: 'boolean', default: false }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               let result = await jiraAgile.getBoardSprints(client, argv['board-id'], argv.startAt, argv.maxResults, argv.state);
 
@@ -1179,7 +1382,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .option('start-at', { type: 'number', default: 0 })
                 .option('max-results', { type: 'number', default: 50 })
                 .option('all', { type: 'boolean', default: false }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               let result = await jiraAgile.getBoardEpics(client, argv['board-id'], argv.startAt, argv.maxResults);
 
@@ -1222,7 +1426,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'get <sprint-id>',
             'Get sprint details',
             (y2) => y2.positional('sprint-id', { type: 'number' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const sprint = await jiraAgile.getSprint(client, argv['sprint-id']);
               if (isJSONOutput(argv)) { outputJSON(sprint); return; }
@@ -1249,7 +1454,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .option('end-date', { type: 'string', description: 'End date (ISO 8601)', default: '' })
                 .option('goal', { type: 'string', description: 'Sprint goal', default: '' })
                 .demandOption(['name', 'board-id']),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const body: Partial<Sprint> = { name: argv.name, originBoardId: argv.boardId };
               if (argv.startDate) body.startDate = argv.startDate;
@@ -1272,7 +1478,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .option('start-date', { type: 'string', description: 'Start date (ISO 8601)' })
                 .option('end-date', { type: 'string', description: 'End date (ISO 8601)' })
                 .option('goal', { type: 'string', description: 'Sprint goal' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const body: Partial<Sprint> = {};
               if (argv.name !== undefined) body.name = argv.name;
@@ -1290,7 +1497,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'delete <sprint-id>',
             'Delete a sprint',
             (y2) => y2.positional('sprint-id', { type: 'number' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               await jiraAgile.deleteSprint(client, argv['sprint-id']);
               console.log(`Sprint ${argv['sprint-id']} deleted.`);
@@ -1307,7 +1515,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .option('max-results', { type: 'number', default: 50 })
                 .option('jql', { type: 'string', description: 'JQL filter', default: '' })
                 .option('all', { type: 'boolean', default: false }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               let result = await jiraAgile.getSprintIssues(client, argv['sprint-id'], argv.startAt, argv.maxResults, argv.jql);
 
@@ -1341,7 +1550,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
               y2
                 .positional('sprint-id', { type: 'number' })
                 .positional('issue-keys', { type: 'string', array: true }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const issueKeys = argv['issue-keys'] || [];
               if (issueKeys.length === 0) throw new Error('at least one issue key is required');
@@ -1366,7 +1576,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'get <epic-id-or-key>',
             'Get epic details',
             (y2) => y2.positional('epic-id-or-key', { type: 'string' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const epic = await jiraAgile.getEpic(client, argv['epic-id-or-key']);
               if (isJSONOutput(argv)) { outputJSON(epic); return; }
@@ -1389,7 +1600,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .option('max-results', { type: 'number', default: 50 })
                 .option('jql', { type: 'string', description: 'JQL filter', default: '' })
                 .option('all', { type: 'boolean', default: false }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               let result = await jiraAgile.getEpicIssues(client, argv['epic-id-or-key'], argv.startAt, argv.maxResults, argv.jql);
 
@@ -1423,7 +1635,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
               y2
                 .positional('epic-id-or-key', { type: 'string' })
                 .positional('issue-keys', { type: 'string', array: true }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const issueKeys = argv['issue-keys'] || [];
               if (issueKeys.length === 0) throw new Error('at least one issue key is required');
@@ -1441,7 +1654,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
       'backlog <issue-keys..>',
       'Move issues to the backlog',
       (y) => y.positional('issue-keys', { type: 'string', array: true }),
-      async (argv: any) => {
+      async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
         const client = getJiraClient(argv);
         const issueKeys = argv['issue-keys'] || [];
         if (issueKeys.length === 0) throw new Error('at least one issue key is required');
@@ -1464,7 +1678,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
           .option('fields', { type: 'array', description: 'Fields to return', default: [] })
           .option('all', { type: 'boolean', default: false })
           .demandOption(['jql']),
-      async (argv: any) => {
+      async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
         const client = getJiraClient(argv);
         let results = await jiraProjects.searchJQL(client, argv.jql, argv.startAt, argv.maxResults, argv.fields || [], undefined);
 
@@ -1512,7 +1727,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .option('favourites', { type: 'boolean', description: 'Show favourite filters', default: false })
                 .option('mine', { type: 'boolean', description: 'Show my filters', default: false })
                 .option('all', { type: 'boolean', default: false }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               let filters: Filter[] = [];
               let total = 0;
@@ -1554,7 +1770,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'get <filter-id>',
             'Get filter details',
             (y2) => y2.positional('filter-id', { type: 'string' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const filter = await jiraProjects.getFilter(client, argv['filter-id']);
               if (isJSONOutput(argv)) { outputJSON(filter); return; }
@@ -1579,7 +1796,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .option('description', { type: 'string', description: 'Filter description', default: '' })
                 .option('favourite', { type: 'boolean', description: 'Mark as favourite', default: false })
                 .demandOption(['name', 'jql']),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const created = await jiraProjects.createFilter(client, {
                 name: argv.name,
@@ -1600,7 +1818,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .option('name', { type: 'string', description: 'Filter name' })
                 .option('jql', { type: 'string', description: 'JQL query' })
                 .option('description', { type: 'string', description: 'Filter description' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const filter: Partial<Filter> = {};
               if (argv.name !== undefined) filter.name = argv.name;
@@ -1616,7 +1835,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'delete <filter-id>',
             'Delete a filter',
             (y2) => y2.positional('filter-id', { type: 'string' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               await jiraProjects.deleteFilter(client, argv['filter-id']);
               outputResult(argv, 'deleted', argv['filter-id'], `Filter ${argv['filter-id']} deleted`, null);
@@ -1639,7 +1859,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'get <account-id>',
             'Get user details',
             (y2) => y2.positional('account-id', { type: 'string' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const user = await jiraAdmin.getUser(client, argv['account-id']);
               if (isJSONOutput(argv)) { outputJSON(user); return; }
@@ -1663,7 +1884,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .option('start-at', { type: 'number', default: 0 })
                 .option('all', { type: 'boolean', default: false })
                 .demandOption(['query']),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               let users = await jiraAdmin.findUsers(client, argv.query, argv.startAt, argv.maxResults);
               if (argv.all) {
@@ -1689,7 +1911,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .option('project', { type: 'string', description: 'Project key (uses profile default if not set)' })
                 .option('issue-key', { type: 'string', description: 'Issue key', default: '' })
                 .option('max-results', { type: 'number', default: 50 }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const project = defaultProject(argv);
               const users = await jiraAdmin.findUsersAssignable(client, argv.query, project, argv.issueKey, 0, argv.maxResults);
@@ -1702,7 +1925,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'me',
             'Show current user',
             () => {},
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const user = await jiraAdmin.getCurrentUser(client);
               console.log(`Account ID:   ${user.accountId}`);
@@ -1721,7 +1945,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .option('max-results', { type: 'number', default: 50 })
                 .option('start-at', { type: 'number', default: 0 })
                 .option('all', { type: 'boolean', default: false }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               let users = await jiraAdmin.getAllUsers(client, argv.startAt, argv.maxResults);
               if (argv.all) {
@@ -1744,7 +1969,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .option('email', { type: 'string', description: 'User email address (required)' })
                 .option('display-name', { type: 'string', description: 'User display name (required)' })
                 .demandOption(['email', 'display-name']),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const user = await jiraAdmin.createUser(client, { emailAddress: argv.email, displayName: argv['display-name'] });
               console.log(`User created: ${user.displayName} (Account ID: ${user.accountId})`);
@@ -1755,7 +1981,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'delete <account-id>',
             'Delete a user',
             (y2) => y2.positional('account-id', { type: 'string' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               await jiraAdmin.deleteUser(client, argv['account-id']);
               console.log(`User ${argv['account-id']} deleted`);
@@ -1782,7 +2009,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .option('max-results', { type: 'number', default: 50 })
                 .option('start-at', { type: 'number', default: 0 })
                 .option('all', { type: 'boolean', default: false }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               let page = await jiraAdmin.getBulkGroups(client, argv.startAt, argv.maxResults);
               let allGroups = page.values || [];
@@ -1805,7 +2033,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'get <group-name>',
             'Get group details',
             (y2) => y2.positional('group-name', { type: 'string' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const group = await jiraAdmin.getGroup(client, argv['group-name']);
               if (isJSONOutput(argv)) { outputJSON(group); return; }
@@ -1822,7 +2051,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
               y2
                 .option('name', { type: 'string', description: 'Group name (required)' })
                 .demandOption(['name']),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const group = await jiraAdmin.createGroup(client, argv.name);
               console.log(`Group created: ${group.name} (ID: ${group.groupId})`);
@@ -1833,7 +2063,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'delete <group-name>',
             'Delete a group',
             (y2) => y2.positional('group-name', { type: 'string' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               await jiraAdmin.deleteGroup(client, argv['group-name']);
               console.log(`Group ${argv['group-name']} deleted`);
@@ -1849,7 +2080,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .option('max-results', { type: 'number', default: 50 })
                 .option('start-at', { type: 'number', default: 0 })
                 .option('all', { type: 'boolean', default: false }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               let members = await jiraAdmin.getGroupMembers(client, argv['group-name'], argv.startAt, argv.maxResults);
               let allMembers = members.values || [];
@@ -1874,7 +2106,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .positional('group-name', { type: 'string' })
                 .option('account-id', { type: 'string', description: 'User account ID (required)' })
                 .demandOption(['account-id']),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               await jiraAdmin.addUserToGroup(client, argv['group-name'], argv.accountId);
               console.log(`User ${argv.accountId} added to group ${argv['group-name']}`);
@@ -1889,7 +2122,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .positional('group-name', { type: 'string' })
                 .option('account-id', { type: 'string', description: 'User account ID (required)' })
                 .demandOption(['account-id']),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               await jiraAdmin.removeUserFromGroup(client, argv['group-name'], argv.accountId);
               console.log(`User ${argv.accountId} removed from group ${argv['group-name']}`);
@@ -1903,7 +2137,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
               y2
                 .option('query', { type: 'string', description: 'Search query', default: '' })
                 .option('max-results', { type: 'number', default: 50 }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const found = await jiraAdmin.findGroups(client, argv.query, argv.maxResults);
               const rows = (found.groups || []).map((g) => [g.groupId || '', g.name || '']);
@@ -1932,7 +2167,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .option('max-results', { type: 'number', default: 50 })
                 .option('start-at', { type: 'number', default: 0 })
                 .option('all', { type: 'boolean', default: false }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
 
               if (argv.name) {
@@ -1973,7 +2209,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'get <id>',
             'Get a dashboard by ID',
             (y2) => y2.positional('id', { type: 'string' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const d = await jiraSchemes.getDashboard(client, argv.id);
               if (isJSONOutput(argv)) { outputJSON(d); return; }
@@ -1993,7 +2230,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .option('name', { type: 'string', description: 'Dashboard name (required)' })
                 .option('description', { type: 'string', description: 'Dashboard description', default: '' })
                 .demandOption(['name']),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const body: Partial<Dashboard> = { name: argv.name };
               if (argv.description) body.description = argv.description;
@@ -2010,7 +2248,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .positional('id', { type: 'string' })
                 .option('name', { type: 'string', description: 'Dashboard name' })
                 .option('description', { type: 'string', description: 'Dashboard description' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const body: Partial<Dashboard> = {};
               if (argv.name) body.name = argv.name;
@@ -2024,7 +2263,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'delete <id>',
             'Delete a dashboard',
             (y2) => y2.positional('id', { type: 'string' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               await jiraSchemes.deleteDashboard(client, argv.id);
               console.log(`Dashboard ${argv.id} deleted`);
@@ -2040,7 +2280,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .option('name', { type: 'string', description: 'Name for the copy (required)' })
                 .option('description', { type: 'string', description: 'Description for the copy', default: '' })
                 .demandOption(['name']),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const body: Partial<Dashboard> = { name: argv.name };
               if (argv.description) body.description = argv.description;
@@ -2061,7 +2302,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                   ['list <dashboard-id>', 'ls <dashboard-id>'],
                   'List gadgets on a dashboard',
                   (y3) => y3.positional('dashboard-id', { type: 'string' }),
-                  async (argv: any) => {
+                  async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
                     const client = getJiraClient(argv);
                     const gadgets = await jiraSchemes.getDashboardGadgets(client, argv['dashboard-id']);
                     if (isJSONOutput(argv)) { outputJSON(gadgets); return; }
@@ -2085,7 +2327,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                       .option('module-key', { type: 'string', description: 'Gadget module key', default: '' })
                       .option('uri', { type: 'string', description: 'Gadget URI', default: '' })
                       .option('title', { type: 'string', description: 'Gadget title', default: '' }),
-                  async (argv: any) => {
+                  async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
                     const client = getJiraClient(argv);
                     const body: Partial<DashboardGadget> = {};
                     if (argv.moduleKey) body.moduleKey = argv.moduleKey;
@@ -2104,7 +2347,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                       .positional('dashboard-id', { type: 'string' })
                       .positional('gadget-id', { type: 'string' })
                       .option('title', { type: 'string', description: 'Gadget title', default: '' }),
-                  async (argv: any) => {
+                  async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
                     const client = getJiraClient(argv);
                     const body: Partial<DashboardGadget> = {};
                     if (argv.title) body.title = argv.title;
@@ -2120,7 +2364,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                     y3
                       .positional('dashboard-id', { type: 'string' })
                       .positional('gadget-id', { type: 'string' }),
-                  async (argv: any) => {
+                  async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
                     const client = getJiraClient(argv);
                     await jiraSchemes.removeDashboardGadget(client, argv['dashboard-id'], argv['gadget-id']);
                     console.log(`Gadget ${argv['gadget-id']} removed from dashboard ${argv['dashboard-id']}`);
@@ -2145,7 +2390,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             ['list', 'ls'],
             'List all project roles',
             () => {},
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const roles = await jiraSchemes.getAllRoles(client);
               const rows = (roles || []).map((r) => [String(r.id || ''), r.name || '', r.description || '']);
@@ -2157,7 +2403,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'get <role-id>',
             'Get a project role',
             (y2) => y2.positional('role-id', { type: 'number' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const role = await jiraSchemes.getRole(client, argv['role-id']);
               outputJSON(role);
@@ -2172,7 +2419,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .option('name', { type: 'string', description: 'Role name (required)' })
                 .option('description', { type: 'string', description: 'Role description', default: '' })
                 .demandOption(['name']),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const body: Partial<ProjectRole> = { name: argv.name };
               if (argv.description) body.description = argv.description;
@@ -2185,7 +2433,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'delete <role-id>',
             'Delete a project role',
             (y2) => y2.positional('role-id', { type: 'number' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               await jiraSchemes.deleteRole(client, argv['role-id']);
               console.log(`Role ${argv['role-id']} deleted.`);
@@ -2213,7 +2462,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .option('outward-issue', { type: 'string', description: 'Outward issue key (required)' })
                 .option('type', { type: 'string', description: 'Link type name (required)' })
                 .demandOption(['inward-issue', 'outward-issue', 'type']),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               await jiraAdmin.createIssueLink(client, {
                 type: { name: argv.type },
@@ -2228,7 +2478,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'get <link-id>',
             'Get an issue link',
             (y2) => y2.positional('link-id', { type: 'string' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const link = await jiraAdmin.getIssueLink(client, argv['link-id']);
               outputJSON(link);
@@ -2239,7 +2490,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'delete <link-id>',
             'Delete an issue link',
             (y2) => y2.positional('link-id', { type: 'string' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               await jiraAdmin.deleteIssueLink(client, argv['link-id']);
               console.log(`Issue link ${argv['link-id']} deleted.`);
@@ -2262,7 +2514,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             ['list', 'ls'],
             'List all issue link types',
             () => {},
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const types = await jiraAdmin.getIssueLinkTypes(client);
               const rows = (types || []).map((t) => [t.id || '', t.name || '', t.inward || '', t.outward || '']);
@@ -2274,7 +2527,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'get <id>',
             'Get an issue link type',
             (y2) => y2.positional('id', { type: 'string' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const lt = await jiraAdmin.getIssueLinkType(client, argv.id);
               outputJSON(lt);
@@ -2290,7 +2544,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .option('inward', { type: 'string', description: 'Inward description (required)' })
                 .option('outward', { type: 'string', description: 'Outward description (required)' })
                 .demandOption(['name', 'inward', 'outward']),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const lt = await jiraAdmin.createIssueLinkType(client, { name: argv.name, inward: argv.inward, outward: argv.outward });
               outputJSON(lt);
@@ -2306,7 +2561,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .option('name', { type: 'string', description: 'Link type name' })
                 .option('inward', { type: 'string', description: 'Inward description' })
                 .option('outward', { type: 'string', description: 'Outward description' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const lt: Partial<IssueLinkType> = {};
               if (argv.name !== undefined) lt.name = argv.name;
@@ -2321,7 +2577,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'delete <id>',
             'Delete an issue link type',
             (y2) => y2.positional('id', { type: 'string' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               await jiraAdmin.deleteIssueLinkType(client, argv.id);
               console.log(`Issue link type ${argv.id} deleted.`);
@@ -2348,7 +2605,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .option('start-at', { type: 'number', default: 0 })
                 .option('max-results', { type: 'number', default: 50 })
                 .option('all', { type: 'boolean', default: false }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               let result = await jiraSchemes.getScreens(client, argv.startAt, argv.maxResults);
               let allValues = result.values || [];
@@ -2373,7 +2631,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .option('name', { type: 'string', description: 'Screen name (required)' })
                 .option('description', { type: 'string', description: 'Screen description', default: '' })
                 .demandOption(['name']),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const body: Partial<Screen> = { name: argv.name };
               if (argv.description) body.description = argv.description;
@@ -2386,7 +2645,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'delete <screen-id>',
             'Delete a screen',
             (y2) => y2.positional('screen-id', { type: 'number' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               await jiraSchemes.deleteScreen(client, argv['screen-id']);
               console.log(`Screen ${argv['screen-id']} deleted.`);
@@ -2397,7 +2657,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'tabs <screen-id>',
             'List tabs for a screen',
             (y2) => y2.positional('screen-id', { type: 'number' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const tabs = await jiraSchemes.getScreenTabs(client, argv['screen-id']);
               const rows = (tabs || []).map((t) => [String(t.id || ''), t.name || '']);
@@ -2412,7 +2673,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
               y2
                 .positional('screen-id', { type: 'number' })
                 .positional('tab-id', { type: 'number' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const fields = await jiraSchemes.getScreenTabFields(client, argv['screen-id'], argv['tab-id']);
               const rows = (fields || []).map((f) => [f.id || '', f.name || '']);
@@ -2436,7 +2698,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             ['list', 'ls'],
             'List all workflows',
             () => {},
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const workflows = await jiraSchemes.getWorkflows(client);
               const rows = (workflows || []).map((wf) => [wf.name || '', wf.description || '', String(wf.isDefault)]);
@@ -2464,7 +2727,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .option('start-at', { type: 'number', default: 0 })
                 .option('max-results', { type: 'number', default: 50 })
                 .option('all', { type: 'boolean', default: false }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               let result = await jiraSchemes.getWorkflowSchemes(client, argv.startAt, argv.maxResults);
               let allValues = result.values || [];
@@ -2485,9 +2749,10 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'get <id>',
             'Get a workflow scheme',
             (y2) => y2.positional('id', { type: 'number' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
-              const scheme = await jiraSchemes.getWorkflowScheme(client, argv.id);
+              const scheme = await jiraSchemes.getWorkflowScheme(client, Number(argv.id));
               outputJSON(scheme);
             }
           )
@@ -2500,7 +2765,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .option('name', { type: 'string', description: 'Scheme name (required)' })
                 .option('description', { type: 'string', description: 'Scheme description', default: '' })
                 .demandOption(['name']),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const body: Partial<WorkflowScheme> = { name: argv.name };
               if (argv.description) body.description = argv.description;
@@ -2517,12 +2783,13 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .positional('id', { type: 'number' })
                 .option('name', { type: 'string', description: 'Scheme name' })
                 .option('description', { type: 'string', description: 'Scheme description' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const body: Partial<WorkflowScheme> = {};
               if (argv.name !== undefined) body.name = argv.name;
               if (argv.description !== undefined) body.description = argv.description;
-              const scheme = await jiraSchemes.updateWorkflowScheme(client, argv.id, body);
+              const scheme = await jiraSchemes.updateWorkflowScheme(client, Number(argv.id), body);
               outputJSON(scheme);
             }
           )
@@ -2531,9 +2798,10 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'delete <id>',
             'Delete a workflow scheme',
             (y2) => y2.positional('id', { type: 'number' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
-              await jiraSchemes.deleteWorkflowScheme(client, argv.id);
+              await jiraSchemes.deleteWorkflowScheme(client, Number(argv.id));
               console.log(`Workflow scheme ${argv.id} deleted.`);
             }
           ),
@@ -2554,7 +2822,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             ['list', 'ls'],
             'List permission schemes',
             () => {},
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const schemes = await jiraSchemes.getPermissionSchemes(client);
               const rows = (schemes || []).map((s) => [String(s.id || ''), s.name || '']);
@@ -2566,9 +2835,10 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'get <id>',
             'Get a permission scheme',
             (y2) => y2.positional('id', { type: 'number' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
-              const scheme = await jiraSchemes.getPermissionScheme(client, argv.id);
+              const scheme = await jiraSchemes.getPermissionScheme(client, Number(argv.id));
               outputJSON(scheme);
             }
           )
@@ -2581,7 +2851,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .option('name', { type: 'string', description: 'Scheme name (required)' })
                 .option('description', { type: 'string', description: 'Scheme description', default: '' })
                 .demandOption(['name']),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const body: Partial<PermissionScheme> = { name: argv.name };
               if (argv.description) body.description = argv.description;
@@ -2594,9 +2865,10 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'delete <id>',
             'Delete a permission scheme',
             (y2) => y2.positional('id', { type: 'number' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
-              await jiraSchemes.deletePermissionScheme(client, argv.id);
+              await jiraSchemes.deletePermissionScheme(client, Number(argv.id));
               console.log(`Permission scheme ${argv.id} deleted.`);
             }
           ),
@@ -2621,7 +2893,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .option('start-at', { type: 'number', default: 0 })
                 .option('max-results', { type: 'number', default: 50 })
                 .option('all', { type: 'boolean', default: false }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               let result = await jiraSchemes.getNotificationSchemes(client, argv.startAt, argv.maxResults);
               let allValues = result.values || [];
@@ -2642,9 +2915,10 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'get <id>',
             'Get a notification scheme',
             (y2) => y2.positional('id', { type: 'number' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
-              const scheme = await jiraSchemes.getNotificationScheme(client, argv.id);
+              const scheme = await jiraSchemes.getNotificationScheme(client, Number(argv.id));
               outputJSON(scheme);
             }
           )
@@ -2657,7 +2931,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .option('name', { type: 'string', description: 'Scheme name (required)' })
                 .option('description', { type: 'string', description: 'Scheme description', default: '' })
                 .demandOption(['name']),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const body: Partial<NotificationScheme> = { name: argv.name };
               if (argv.description) body.description = argv.description;
@@ -2670,9 +2945,10 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'delete <id>',
             'Delete a notification scheme',
             (y2) => y2.positional('id', { type: 'number' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
-              await jiraSchemes.deleteNotificationScheme(client, argv.id);
+              await jiraSchemes.deleteNotificationScheme(client, Number(argv.id));
               console.log(`Notification scheme ${argv.id} deleted.`);
             }
           ),
@@ -2693,7 +2969,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             ['list', 'ls'],
             'List issue security schemes',
             () => {},
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const schemes = await jiraSchemes.getIssueSecuritySchemes(client);
               const rows = (schemes || []).map((s) => [String(s.id || ''), s.name || '']);
@@ -2705,9 +2982,10 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'get <id>',
             'Get an issue security scheme',
             (y2) => y2.positional('id', { type: 'number' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
-              const scheme = await jiraSchemes.getIssueSecurityScheme(client, argv.id);
+              const scheme = await jiraSchemes.getIssueSecurityScheme(client, Number(argv.id));
               outputJSON(scheme);
             }
           )
@@ -2720,7 +2998,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .option('name', { type: 'string', description: 'Scheme name (required)' })
                 .option('description', { type: 'string', description: 'Scheme description', default: '' })
                 .demandOption(['name']),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const body: Partial<IssueSecurityScheme> = { name: argv.name };
               if (argv.description) body.description = argv.description;
@@ -2733,9 +3012,10 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'delete <id>',
             'Delete an issue security scheme',
             (y2) => y2.positional('id', { type: 'number' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
-              await jiraSchemes.deleteIssueSecurityScheme(client, argv.id);
+              await jiraSchemes.deleteIssueSecurityScheme(client, Number(argv.id));
               console.log(`Issue security scheme ${argv.id} deleted.`);
             }
           ),
@@ -2760,7 +3040,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .option('start-at', { type: 'number', default: 0 })
                 .option('max-results', { type: 'number', default: 50 })
                 .option('all', { type: 'boolean', default: false }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               let result = await jiraSchemes.getFieldConfigurations(client, argv.startAt, argv.maxResults);
               let allValues = result.values || [];
@@ -2785,7 +3066,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .option('name', { type: 'string', description: 'Configuration name (required)' })
                 .option('description', { type: 'string', description: 'Configuration description', default: '' })
                 .demandOption(['name']),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const body: Partial<FieldConfiguration> = { name: argv.name };
               if (argv.description) body.description = argv.description;
@@ -2798,9 +3080,10 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'delete <id>',
             'Delete a field configuration',
             (y2) => y2.positional('id', { type: 'number' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
-              await jiraSchemes.deleteFieldConfiguration(client, argv.id);
+              await jiraSchemes.deleteFieldConfiguration(client, Number(argv.id));
               console.log(`Field configuration ${argv.id} deleted.`);
             }
           ),
@@ -2825,7 +3108,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .option('start-at', { type: 'number', default: 0 })
                 .option('max-results', { type: 'number', default: 50 })
                 .option('all', { type: 'boolean', default: false }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               let result = await jiraSchemes.getIssueTypeSchemes(client, argv.startAt, argv.maxResults);
               let allValues = result.values || [];
@@ -2850,7 +3134,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .option('name', { type: 'string', description: 'Scheme name (required)' })
                 .option('description', { type: 'string', description: 'Scheme description', default: '' })
                 .demandOption(['name']),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const body: Partial<IssueTypeScheme> = { name: argv.name };
               if (argv.description) body.description = argv.description;
@@ -2863,7 +3148,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'delete <id>',
             'Delete an issue type scheme',
             (y2) => y2.positional('id', { type: 'string' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               await jiraSchemes.deleteIssueTypeScheme(client, argv.id);
               console.log(`Issue type scheme ${argv.id} deleted.`);
@@ -2879,7 +3165,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
       ['serverinfo', 'si'],
       'Show Jira server information',
       () => {},
-      async (argv: any) => {
+      async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
         const client = getJiraClient(argv);
         const info = await jiraAdmin.getServerInfo(client);
         outputJSON(info);
@@ -2904,7 +3191,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .option('start-at', { type: 'number', default: 0 })
                 .option('max-results', { type: 'number', default: 50 })
                 .option('all', { type: 'boolean', default: false }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               let result = await jiraSchemes.getWebhooks(client, argv.startAt, argv.maxResults);
               let allValues = result.values || [];
@@ -2941,7 +3229,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'get <id>',
             'Get an attachment',
             (y2) => y2.positional('id', { type: 'string' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const att = await jiraAdmin.getAttachment(client, argv.id);
               if (isJSONOutput(argv)) { outputJSON(att); return; }
@@ -2955,7 +3244,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'delete <id>',
             'Delete an attachment',
             (y2) => y2.positional('id', { type: 'string' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               await jiraAdmin.deleteAttachment(client, argv.id);
               console.log(`Attachment ${argv.id} deleted.`);
@@ -2966,7 +3256,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'meta',
             'Show attachment settings',
             () => {},
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const meta = await jiraAdmin.getAttachmentMeta(client);
               outputJSON(meta);
@@ -2986,7 +3277,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
           .option('start-at', { type: 'number', default: 0 })
           .option('max-results', { type: 'number', default: 50 })
           .option('all', { type: 'boolean', default: false }),
-      async (argv: any) => {
+      async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
         const client = getJiraClient(argv);
         let records = await jiraAdmin.getAuditRecords(client, argv.startAt, argv.maxResults);
         let allRecords = records.records || [];
@@ -3016,7 +3308,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'get',
             'Get the announcement banner',
             () => {},
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const banner = await jiraAdmin.getAnnouncementBanner(client);
               outputJSON(banner);
@@ -3031,7 +3324,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .option('message', { type: 'string', description: 'Banner message' })
                 .option('enabled', { type: 'boolean', description: 'Enable the banner' })
                 .option('dismissible', { type: 'boolean', description: 'Allow dismissing the banner' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const banner: Partial<AnnouncementBanner> = {};
               if (argv.message !== undefined) banner.message = argv.message;
@@ -3051,7 +3345,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
       ['configuration', 'config'],
       'Show Jira configuration',
       () => {},
-      async (argv: any) => {
+      async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
         const client = getJiraClient(argv);
         const config = await jiraAdmin.getConfiguration(client);
         outputJSON(config);
@@ -3075,7 +3370,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
               y2
                 .option('project', { type: 'string', description: 'Project key (uses profile default if not set)' })
                 .option('issue', { type: 'string', description: 'Issue key', default: '' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const project = defaultProject(argv);
               const perms = await jiraAdmin.getMyPermissions(client, project, argv.issue);
@@ -3088,7 +3384,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'all',
             'List all permissions',
             () => {},
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const perms = await jiraAdmin.getAllPermissions(client);
               const rows = Object.values(perms || {}).map((p: UserPermission) => [p.key || '', p.name || '', String(p.havePermission)]);
@@ -3112,7 +3409,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'get <task-id>',
             'Get a task',
             (y2) => y2.positional('task-id', { type: 'string' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const task = await jiraAdmin.getTask(client, argv['task-id']);
               outputJSON(task);
@@ -3123,7 +3421,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'cancel <task-id>',
             'Cancel a task',
             (y2) => y2.positional('task-id', { type: 'string' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               await jiraAdmin.cancelTask(client, argv['task-id']);
               console.log(`Task ${argv['task-id']} cancelled.`);
@@ -3146,7 +3445,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             ['list', 'ls'],
             'List project categories',
             () => {},
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const cats = await jiraProjects.getProjectCategories(client);
               const rows = (cats || []).map((c) => [c.id || '', c.name || '', c.description || '']);
@@ -3158,7 +3458,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'get <id>',
             'Get a project category',
             (y2) => y2.positional('id', { type: 'string' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const cat = await jiraProjects.getProjectCategory(client, argv.id);
               outputJSON(cat);
@@ -3173,7 +3474,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .option('name', { type: 'string', description: 'Category name (required)' })
                 .option('description', { type: 'string', description: 'Category description', default: '' })
                 .demandOption(['name']),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const cat: Partial<ProjectCategory> = { name: argv.name };
               if (argv.description) cat.description = argv.description;
@@ -3190,7 +3492,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .positional('id', { type: 'string' })
                 .option('name', { type: 'string', description: 'Category name' })
                 .option('description', { type: 'string', description: 'Category description' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const cat: Partial<ProjectCategory> = {};
               if (argv.name !== undefined) cat.name = argv.name;
@@ -3204,7 +3507,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'delete <id>',
             'Delete a project category',
             (y2) => y2.positional('id', { type: 'string' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               await jiraProjects.deleteProjectCategory(client, argv.id);
               console.log(`Project category ${argv.id} deleted.`);
@@ -3227,7 +3531,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'get <id>',
             'Get a component by ID',
             (y2) => y2.positional('id', { type: 'string' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const comp = await jiraAdmin.getComponent(client, argv.id);
               if (isJSONOutput(argv)) { outputJSON(comp); return; }
@@ -3252,7 +3557,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .option('lead', { type: 'string', description: 'Lead account ID', default: '' })
                 .option('assignee-type', { type: 'string', description: 'Assignee type', default: '' })
                 .demandOption(['name']),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const project = defaultProject(argv);
               const body: Partial<ProjectComponent> & { leadAccountId?: string } = { project, name: argv.name };
@@ -3273,7 +3579,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .option('name', { type: 'string', description: 'Component name' })
                 .option('description', { type: 'string', description: 'Component description' })
                 .option('lead', { type: 'string', description: 'Lead account ID' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const body: Partial<ProjectComponent> & { leadAccountId?: string } = {};
               if (argv.name) body.name = argv.name;
@@ -3288,7 +3595,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'delete <id>',
             'Delete a component',
             (y2) => y2.positional('id', { type: 'string' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               await jiraAdmin.deleteComponent(client, argv.id);
               console.log(`Component ${argv.id} deleted`);
@@ -3311,7 +3619,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'get <id>',
             'Get a version by ID',
             (y2) => y2.positional('id', { type: 'string' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const ver = await jiraAdmin.getVersion(client, argv.id);
               if (isJSONOutput(argv)) { outputJSON(ver); return; }
@@ -3339,7 +3648,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .option('released', { type: 'boolean', description: 'Whether the version is released', default: false })
                 .option('archived', { type: 'boolean', description: 'Whether the version is archived', default: false })
                 .demandOption(['project-id', 'name']),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const ver: Partial<Version> = { projectId: argv.projectId, name: argv.name };
               if (argv.description) ver.description = argv.description;
@@ -3364,7 +3674,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .option('release-date', { type: 'string', description: 'Release date (YYYY-MM-DD)' })
                 .option('released', { type: 'boolean', description: 'Whether the version is released' })
                 .option('archived', { type: 'boolean', description: 'Whether the version is archived' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const ver = await jiraAdmin.getVersion(client, argv.id);
               if (argv.name) ver.name = argv.name;
@@ -3382,7 +3693,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'delete <id>',
             'Delete a version',
             (y2) => y2.positional('id', { type: 'string' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               await jiraAdmin.deleteVersion(client, argv.id);
               console.log(`Version ${argv.id} deleted`);
@@ -3407,7 +3719,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             (y2) =>
               y2
                 .option('custom', { type: 'boolean', description: 'Show only custom fields', default: false }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const fields = await jiraSchemes.getFields(client);
               if (isJSONOutput(argv)) {
@@ -3436,12 +3749,13 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .option('description', { type: 'string', description: 'Field description', default: '' })
                 .option('search-key', { type: 'string', description: 'Searcher key', default: '' })
                 .demandOption(['name', 'type']),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
-              const body: Record<string, unknown> = { name: argv.name, type: argv.type };
+              const body: Partial<Field> & { searcherKey?: string; type?: string; description?: string } = { name: argv.name, type: argv.type };
               if (argv.description) body.description = argv.description;
               if (argv.searchKey) body.searcherKey = argv.searchKey;
-              const field = await jiraSchemes.createCustomField(client, body as Partial<Field>);
+              const field = await jiraSchemes.createCustomField(client, body);
               console.log(`Field created: ${field.name} (ID: ${field.id})`);
             }
           )
@@ -3450,7 +3764,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'delete <id>',
             'Delete a custom field',
             (y2) => y2.positional('id', { type: 'string' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               await jiraSchemes.deleteCustomField(client, argv.id);
               console.log(`Field ${argv.id} deleted`);
@@ -3461,7 +3776,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'trash <id>',
             'Move a custom field to trash',
             (y2) => y2.positional('id', { type: 'string' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               await jiraSchemes.trashCustomField(client, argv.id);
               console.log(`Field ${argv.id} moved to trash`);
@@ -3472,7 +3788,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'restore <id>',
             'Restore a custom field from trash',
             (y2) => y2.positional('id', { type: 'string' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               await jiraSchemes.restoreCustomField(client, argv.id);
               console.log(`Field ${argv.id} restored`);
@@ -3492,7 +3809,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
           .option('start-at', { type: 'number', default: 0 })
           .option('max-results', { type: 'number', default: 50 })
           .option('all', { type: 'boolean', default: false }),
-      async (argv: any) => {
+      async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
         const client = getJiraClient(argv);
         let result = await jiraAdmin.getLabels(client, argv.startAt, argv.maxResults);
         let allLabels = result.values || [];
@@ -3525,7 +3843,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             ['list', 'ls'],
             'List all issue types',
             () => {},
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const types = await jiraAdmin.getAllIssueTypes(client);
               const rows = (types || []).map((t) => [t.id || '', t.name || '', String(t.subtask), t.description || '']);
@@ -3537,7 +3856,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'get <id>',
             'Get an issue type by ID',
             (y2) => y2.positional('id', { type: 'string' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const it = await jiraAdmin.getIssueType(client, argv.id);
               if (isJSONOutput(argv)) { outputJSON(it); return; }
@@ -3558,7 +3878,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .option('description', { type: 'string', description: 'Issue type description', default: '' })
                 .option('type', { type: 'string', description: 'Issue type: standard or subtask', default: 'standard' })
                 .demandOption(['name']),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const body: Partial<IssueType> & { type?: string } = { name: argv.name, type: argv.type };
               if (argv.description) body.description = argv.description;
@@ -3575,7 +3896,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .positional('id', { type: 'string' })
                 .option('name', { type: 'string', description: 'Issue type name' })
                 .option('description', { type: 'string', description: 'Issue type description' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const body: Partial<IssueType> = {};
               if (argv.name) body.name = argv.name;
@@ -3589,7 +3911,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'delete <id>',
             'Delete an issue type',
             (y2) => y2.positional('id', { type: 'string' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               await jiraAdmin.deleteIssueType(client, argv.id);
               console.log(`Issue type ${argv.id} deleted`);
@@ -3612,7 +3935,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             ['list', 'ls'],
             'List all priorities',
             () => {},
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const priorities = await jiraAdmin.getAllPriorities(client);
               const rows = (priorities || []).map((p) => [p.id || '', p.name || '', p.description || '']);
@@ -3624,7 +3948,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'get <id>',
             'Get a priority by ID',
             (y2) => y2.positional('id', { type: 'string' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const p = await jiraAdmin.getPriority(client, argv.id);
               if (isJSONOutput(argv)) { outputJSON(p); return; }
@@ -3645,7 +3970,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .option('description', { type: 'string', description: 'Priority description', default: '' })
                 .option('status-color', { type: 'string', description: 'Status color hex', default: '#ffffff' })
                 .demandOption(['name']),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const body: Partial<Priority> = { name: argv.name, statusColor: argv.statusColor };
               if (argv.description) body.description = argv.description;
@@ -3662,7 +3988,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .positional('id', { type: 'string' })
                 .option('name', { type: 'string', description: 'Priority name' })
                 .option('description', { type: 'string', description: 'Priority description' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const body: Partial<Priority> = {};
               if (argv.name) body.name = argv.name;
@@ -3676,7 +4003,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'delete <id>',
             'Delete a priority',
             (y2) => y2.positional('id', { type: 'string' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               await jiraAdmin.deletePriority(client, argv.id);
               console.log(`Priority ${argv.id} deleted`);
@@ -3699,7 +4027,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             ['list', 'ls'],
             'List all resolutions',
             () => {},
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const resolutions = await jiraAdmin.getAllResolutions(client);
               const rows = (resolutions || []).map((r) => [r.id || '', r.name || '', r.description || '']);
@@ -3711,7 +4040,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'get <id>',
             'Get a resolution by ID',
             (y2) => y2.positional('id', { type: 'string' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const r = await jiraAdmin.getResolution(client, argv.id);
               if (isJSONOutput(argv)) { outputJSON(r); return; }
@@ -3730,7 +4060,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .option('name', { type: 'string', description: 'Resolution name (required)' })
                 .option('description', { type: 'string', description: 'Resolution description', default: '' })
                 .demandOption(['name']),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const body: Partial<Resolution> = { name: argv.name };
               if (argv.description) body.description = argv.description;
@@ -3747,7 +4078,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 .positional('id', { type: 'string' })
                 .option('name', { type: 'string', description: 'Resolution name' })
                 .option('description', { type: 'string', description: 'Resolution description' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const body: Partial<Resolution> = {};
               if (argv.name) body.name = argv.name;
@@ -3761,7 +4093,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'delete <id>',
             'Delete a resolution',
             (y2) => y2.positional('id', { type: 'string' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               await jiraAdmin.deleteResolution(client, argv.id);
               console.log(`Resolution ${argv.id} deleted`);
@@ -3784,7 +4117,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             ['list', 'ls'],
             'List all statuses',
             () => {},
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const statuses = await jiraAdmin.getAllStatuses(client);
               const rows = (statuses || []).map((s) => [s.id || '', s.name || '', s.statusCategory?.name || '']);
@@ -3796,7 +4130,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'get <id-or-name>',
             'Get a status by ID or name',
             (y2) => y2.positional('id-or-name', { type: 'string' }),
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const s = await jiraAdmin.getStatus(client, argv['id-or-name']);
               if (isJSONOutput(argv)) { outputJSON(s); return; }
@@ -3812,7 +4147,8 @@ export function registerJiraCommands(yargs: Argv): Argv {
             'categories',
             'List status categories',
             () => {},
-            async (argv: any) => {
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
               const client = getJiraClient(argv);
               const categories = await jiraAdmin.getStatusCategories(client);
               const rows = (categories || []).map((c) => [

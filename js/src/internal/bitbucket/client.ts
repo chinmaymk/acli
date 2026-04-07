@@ -1,4 +1,5 @@
 import type { Profile } from '../config/config.js';
+import type { JsonBody } from '../types.js';
 
 const BASE_URL = 'https://api.bitbucket.org/2.0';
 
@@ -15,7 +16,7 @@ export interface PaginationOptions {
   all?: boolean;
 }
 
-export interface PaginatedResponse<T = any> {
+export interface PaginatedResponse<T> {
   size: number;
   page: number;
   pagelen: number;
@@ -38,7 +39,7 @@ function createClient(profile: Profile): BitbucketClient {
 /**
  * Core HTTP request handler.
  */
-async function doRequest<T = unknown>(client: BitbucketClient, method: string, path: string, body?: unknown): Promise<T> {
+async function doRequest<T>(client: BitbucketClient, method: string, path: string, body?: JsonBody): Promise<T> {
   const url = path.startsWith('http') ? path : BASE_URL + path;
 
   const headers: Record<string, string> = {};
@@ -65,7 +66,7 @@ async function doRequest<T = unknown>(client: BitbucketClient, method: string, p
   if (!resp.ok) {
     let message: string | undefined;
     try {
-      const parsed = JSON.parse(text);
+      const parsed = JSON.parse(text) as { error?: { message?: string } };
       message = parsed?.error?.message;
     } catch {
       // fall through
@@ -82,7 +83,7 @@ async function doRequest<T = unknown>(client: BitbucketClient, method: string, p
 /**
  * GET request returning parsed JSON.
  */
-async function get<T = unknown>(client: BitbucketClient, path: string): Promise<T> {
+async function get<T>(client: BitbucketClient, path: string): Promise<T> {
   return doRequest<T>(client, 'GET', path);
 }
 
@@ -115,14 +116,14 @@ async function getRaw(client: BitbucketClient, path: string): Promise<string> {
 /**
  * POST request with JSON body returning parsed JSON.
  */
-async function post<T = unknown>(client: BitbucketClient, path: string, body?: unknown): Promise<T> {
+async function post<T>(client: BitbucketClient, path: string, body?: JsonBody): Promise<T> {
   return doRequest<T>(client, 'POST', path, body);
 }
 
 /**
  * PUT request with JSON body returning parsed JSON.
  */
-async function put<T = unknown>(client: BitbucketClient, path: string, body: unknown): Promise<T> {
+async function put<T>(client: BitbucketClient, path: string, body: JsonBody): Promise<T> {
   return doRequest<T>(client, 'PUT', path, body);
 }
 
@@ -130,20 +131,20 @@ async function put<T = unknown>(client: BitbucketClient, path: string, body: unk
  * DELETE request expecting 204 No Content.
  */
 async function deleteNoContent(client: BitbucketClient, path: string): Promise<void> {
-  await doRequest(client, 'DELETE', path);
+  await doRequest<void>(client, 'DELETE', path);
 }
 
 /**
  * POST request expecting 204 No Content.
  */
-async function postNoContent(client: BitbucketClient, path: string, body?: unknown): Promise<void> {
-  await doRequest(client, 'POST', path, body);
+async function postNoContent(client: BitbucketClient, path: string, body?: JsonBody): Promise<void> {
+  await doRequest<void>(client, 'POST', path, body);
 }
 
 /**
  * Paginated GET. Follows `next` links to collect all values across pages.
  */
-async function getAll<T = unknown>(client: BitbucketClient, path: string): Promise<T[]> {
+async function getAll<T>(client: BitbucketClient, path: string): Promise<T[]> {
   const allValues: T[] = [];
   let nextUrl: string | null = path;
 

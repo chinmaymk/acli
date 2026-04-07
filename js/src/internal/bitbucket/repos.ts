@@ -38,8 +38,7 @@ export async function getRepository(client: BitbucketClient, workspace: string, 
 export async function createRepository(client: BitbucketClient, workspace: string, req: CreateRepoRequest): Promise<Repository> {
   const slug = req.name;
   const path = `/repositories/${encodeURIComponent(workspace)}/${encodeURIComponent(slug)}`;
-  const body: Record<string, unknown> = { ...req };
-  return post(client, path, body);
+  return post(client, path, { ...req });
 }
 
 export async function deleteRepository(client: BitbucketClient, workspace: string, repoSlug: string): Promise<void> {

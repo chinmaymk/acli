@@ -1,13 +1,13 @@
 import {
-  getBitbucketClient,
-  defaultWorkspace,
-  defaultBBProject,
-  resolveWorkspaceAndRepo,
-  resolveWorkspaceRepoAndID,
-  isJSONOutput,
+  getBitbucketClient as _getBitbucketClient,
+  defaultWorkspace as _defaultWorkspace,
+  defaultBBProject as _defaultBBProject,
+  resolveWorkspaceAndRepo as _resolveWorkspaceAndRepo,
+  resolveWorkspaceRepoAndID as _resolveWorkspaceRepoAndID,
+  isJSONOutput as _isJSONOutput,
   outputJSON,
-  outputResult,
-  getBBPaginationOpts,
+  outputResult as _outputResult,
+  getBBPaginationOpts as _getBBPaginationOpts,
   firstLine,
   truncate,
 } from './helpers.js';
@@ -38,8 +38,759 @@ import type {
   CreateIssueRequest,
   CreateWebhookRequest,
   InlineCommentParams,
+  PRActivity,
 } from '../internal/bitbucket/types.js';
-import type { Argv } from 'yargs';
+import type { BaseArgv, BitbucketClient } from './helpers.js';
+import type { Argv, ArgumentsCamelCase } from 'yargs';
+import type { JsonBody } from '../internal/types.js';
+
+// ---------------------------------------------------------------------------
+// Argv-compatible helper wrappers
+// ---------------------------------------------------------------------------
+//
+// The shared helpers in ./helpers.ts accept a `BaseArgv` with a specific
+// string index signature. The yargs `ArgumentsCamelCase<T>` type that arrives
+// in our handlers has a wider `unknown`-valued index signature which TS will
+// not implicitly narrow to `BaseArgv`. To keep the handler bodies clean, the
+// wrappers below accept any object-shaped argv and cast to `BaseArgv` in one
+// place instead of sprinkling casts throughout.
+
+type AnyArgv = object;
+
+function getBitbucketClient(argv: AnyArgv): BitbucketClient {
+  return _getBitbucketClient(argv as BaseArgv);
+}
+function defaultWorkspace(argv: AnyArgv, args: string[], argIndex: number): string {
+  return _defaultWorkspace(argv as BaseArgv, args, argIndex);
+}
+function defaultBBProject(argv: AnyArgv): string {
+  return _defaultBBProject(argv as BaseArgv);
+}
+function resolveWorkspaceAndRepo(argv: AnyArgv, args: string[]): [string, string] {
+  return _resolveWorkspaceAndRepo(argv as BaseArgv, args);
+}
+function resolveWorkspaceRepoAndID(argv: AnyArgv, args: string[]): [string, string, string] {
+  return _resolveWorkspaceRepoAndID(argv as BaseArgv, args);
+}
+function isJSONOutput(argv: AnyArgv): boolean {
+  return _isJSONOutput(argv as BaseArgv);
+}
+function outputResult(argv: AnyArgv, action: string, key: string, message: string, data: JsonBody): void {
+  _outputResult(argv as BaseArgv, action, key, message, data);
+}
+function getBBPaginationOpts(argv: AnyArgv): { page: number; pageLen: number; all: boolean } {
+  return _getBBPaginationOpts(argv as BaseArgv);
+}
+
+// ---------------------------------------------------------------------------
+// Handler argv interfaces
+// ---------------------------------------------------------------------------
+//
+// Each yargs command handler below gets a small, precise argv interface. We
+// annotate the handler parameter as `ArgumentsCamelCase<T>` so that the
+// yargs v17 command overloads pick up the function signature correctly.
+//
+// Many helpers in ./helpers.js take a `BaseArgv` with a stricter string index
+// signature than `ArgumentsCamelCase` provides, so we narrow with an explicit
+// `argv as BaseArgv` cast at the call sites instead of double-step casts.
+
+interface PagArgs {
+  page?: number;
+  pagelen?: number;
+  all?: boolean;
+}
+
+interface WhoamiArgs {
+  output?: string;
+  json?: boolean;
+}
+
+interface RepoListArgs extends PagArgs {
+  workspace?: string;
+  role?: string;
+  query?: string;
+  sort?: string;
+  output?: string;
+  json?: boolean;
+}
+
+interface RepoGetArgs {
+  workspace?: string;
+  repo: string;
+  output?: string;
+  json?: boolean;
+}
+
+interface RepoCreateArgs {
+  workspace?: string;
+  name?: string;
+  slug?: string;
+  description?: string;
+  language?: string;
+  private?: boolean;
+  project?: string;
+  output?: string;
+  json?: boolean;
+}
+
+interface RepoDeleteArgs {
+  workspace?: string;
+  repo: string;
+  output?: string;
+  json?: boolean;
+}
+
+interface RepoForkArgs {
+  workspace?: string;
+  repo: string;
+  name?: string;
+  'target-workspace'?: string;
+  output?: string;
+  json?: boolean;
+}
+
+interface RepoForksArgs extends PagArgs {
+  workspace?: string;
+  repo: string;
+  output?: string;
+  json?: boolean;
+}
+
+interface PRListArgs extends PagArgs {
+  workspace?: string;
+  repo: string;
+  state?: string;
+  author?: string;
+  output?: string;
+  json?: boolean;
+}
+
+interface PRGetArgs {
+  workspace?: string;
+  repo: string;
+  'pr-id': string;
+  output?: string;
+  json?: boolean;
+}
+
+interface PRCreateArgs {
+  workspace?: string;
+  repo: string;
+  title?: string;
+  source?: string;
+  destination?: string;
+  description?: string;
+  'close-source-branch'?: boolean;
+  output?: string;
+  json?: boolean;
+}
+
+interface PRUpdateArgs {
+  workspace?: string;
+  repo: string;
+  'pr-id': string;
+  title?: string;
+  description?: string;
+  destination?: string;
+  output?: string;
+  json?: boolean;
+}
+
+interface PRIdOnlyArgs {
+  workspace?: string;
+  repo: string;
+  'pr-id': string;
+  output?: string;
+  json?: boolean;
+}
+
+interface PRMergeArgs {
+  workspace?: string;
+  repo: string;
+  'pr-id': string;
+  strategy?: string;
+  message?: string;
+  'close-source-branch'?: boolean;
+  output?: string;
+  json?: boolean;
+}
+
+interface PRCommentsArgs extends PagArgs {
+  workspace?: string;
+  repo: string;
+  'pr-id': string;
+  output?: string;
+  json?: boolean;
+}
+
+interface PRCommentArgs {
+  workspace?: string;
+  repo: string;
+  'pr-id': string;
+  body?: string;
+  file?: string;
+  line?: number;
+  output?: string;
+  json?: boolean;
+}
+
+interface PRTaskListArgs extends PagArgs {
+  workspace?: string;
+  repo: string;
+  'pr-id': string;
+  output?: string;
+  json?: boolean;
+}
+
+interface PRTaskGetArgs {
+  workspace?: string;
+  repo: string;
+  'pr-id': string;
+  'task-id': string;
+  output?: string;
+  json?: boolean;
+}
+
+interface PRTaskCreateArgs {
+  workspace?: string;
+  repo: string;
+  'pr-id': string;
+  body?: string;
+  'comment-id'?: number;
+  file?: string;
+  line?: number;
+  output?: string;
+  json?: boolean;
+}
+
+interface PRTaskUpdateArgs {
+  workspace?: string;
+  repo: string;
+  'pr-id': string;
+  'task-id': string;
+  body?: string;
+  state?: string;
+  output?: string;
+  json?: boolean;
+}
+
+interface PRTaskSimpleArgs {
+  workspace?: string;
+  repo: string;
+  'pr-id': string;
+  'task-id': string;
+  output?: string;
+  json?: boolean;
+}
+
+interface PipelineListArgs extends PagArgs {
+  workspace?: string;
+  repo: string;
+  status?: string;
+  output?: string;
+  json?: boolean;
+}
+
+interface PipelineGetArgs {
+  workspace?: string;
+  repo: string;
+  'pipeline-uuid': string;
+  output?: string;
+  json?: boolean;
+}
+
+interface PipelineRunArgs {
+  workspace?: string;
+  repo: string;
+  branch?: string;
+  custom?: string;
+  output?: string;
+  json?: boolean;
+}
+
+interface PipelineStepsArgs extends PagArgs {
+  workspace?: string;
+  repo: string;
+  'pipeline-uuid': string;
+  output?: string;
+  json?: boolean;
+}
+
+interface PipelineStepArgs {
+  workspace?: string;
+  repo: string;
+  'pipeline-uuid': string;
+  'step-uuid': string;
+  output?: string;
+  json?: boolean;
+}
+
+interface PipelineVarsArgs extends PagArgs {
+  workspace?: string;
+  repo: string;
+  output?: string;
+  json?: boolean;
+}
+
+interface PipelineAddVarArgs {
+  workspace?: string;
+  repo: string;
+  key?: string;
+  value?: string;
+  secured?: boolean;
+  output?: string;
+  json?: boolean;
+}
+
+interface PipelineDelVarArgs {
+  workspace?: string;
+  repo: string;
+  'variable-uuid': string;
+  output?: string;
+  json?: boolean;
+}
+
+interface BranchListArgs extends PagArgs {
+  workspace?: string;
+  repo: string;
+  query?: string;
+  output?: string;
+  json?: boolean;
+}
+
+interface BranchGetArgs {
+  workspace?: string;
+  repo: string;
+  'branch-name': string;
+  output?: string;
+  json?: boolean;
+}
+
+interface BranchCreateArgs {
+  workspace?: string;
+  repo: string;
+  name?: string;
+  target?: string;
+  output?: string;
+  json?: boolean;
+}
+
+interface BranchDeleteArgs {
+  workspace?: string;
+  repo: string;
+  'branch-name': string;
+  output?: string;
+  json?: boolean;
+}
+
+interface TagListArgs extends PagArgs {
+  workspace?: string;
+  repo: string;
+  query?: string;
+  output?: string;
+  json?: boolean;
+}
+
+interface TagGetArgs {
+  workspace?: string;
+  repo: string;
+  'tag-name': string;
+  output?: string;
+  json?: boolean;
+}
+
+interface TagCreateArgs {
+  workspace?: string;
+  repo: string;
+  name?: string;
+  target?: string;
+  message?: string;
+  output?: string;
+  json?: boolean;
+}
+
+interface TagDeleteArgs {
+  workspace?: string;
+  repo: string;
+  'tag-name': string;
+  output?: string;
+  json?: boolean;
+}
+
+interface CommitListArgs extends PagArgs {
+  workspace?: string;
+  repo: string;
+  include?: string;
+  exclude?: string;
+  output?: string;
+  json?: boolean;
+}
+
+interface CommitGetArgs {
+  workspace?: string;
+  repo: string;
+  'commit-hash': string;
+  output?: string;
+  json?: boolean;
+}
+
+interface CommitStatusesArgs extends PagArgs {
+  workspace?: string;
+  repo: string;
+  'commit-hash': string;
+  output?: string;
+  json?: boolean;
+}
+
+interface CommitDiffArgs {
+  workspace?: string;
+  repo: string;
+  spec: string;
+  output?: string;
+  json?: boolean;
+}
+
+interface WorkspaceListArgs extends PagArgs {
+  output?: string;
+  json?: boolean;
+}
+
+interface WorkspaceGetArgs {
+  workspace?: string;
+  output?: string;
+  json?: boolean;
+}
+
+interface WorkspaceMembersArgs extends PagArgs {
+  workspace?: string;
+  output?: string;
+  json?: boolean;
+}
+
+interface ProjectListArgs extends PagArgs {
+  workspace?: string;
+  output?: string;
+  json?: boolean;
+}
+
+interface ProjectGetArgs {
+  workspace?: string;
+  'project-key'?: string;
+  output?: string;
+  json?: boolean;
+}
+
+interface ProjectCreateArgs {
+  workspace?: string;
+  name?: string;
+  key?: string;
+  description?: string;
+  private?: boolean;
+  output?: string;
+  json?: boolean;
+}
+
+interface ProjectDeleteArgs {
+  workspace?: string;
+  'project-key'?: string;
+  output?: string;
+  json?: boolean;
+}
+
+interface WebhookListArgs extends PagArgs {
+  workspace?: string;
+  repo: string;
+  output?: string;
+  json?: boolean;
+}
+
+interface WebhookGetArgs {
+  workspace?: string;
+  repo: string;
+  'webhook-uuid': string;
+  output?: string;
+  json?: boolean;
+}
+
+interface WebhookCreateArgs {
+  workspace?: string;
+  repo: string;
+  url?: string;
+  description?: string;
+  events?: string[];
+  active?: boolean;
+  output?: string;
+  json?: boolean;
+}
+
+interface WebhookUpdateArgs {
+  workspace?: string;
+  repo: string;
+  'webhook-uuid': string;
+  url?: string;
+  description?: string;
+  events?: string[];
+  active?: boolean;
+  output?: string;
+  json?: boolean;
+}
+
+interface WebhookDeleteArgs {
+  workspace?: string;
+  repo: string;
+  'webhook-uuid': string;
+  output?: string;
+  json?: boolean;
+}
+
+interface WorkspaceWebhookListArgs extends PagArgs {
+  workspace?: string;
+  output?: string;
+  json?: boolean;
+}
+
+interface WorkspaceWebhookCreateArgs {
+  workspace?: string;
+  url?: string;
+  description?: string;
+  events?: string[];
+  active?: boolean;
+  output?: string;
+  json?: boolean;
+}
+
+interface WorkspaceWebhookDeleteArgs {
+  workspace?: string;
+  'webhook-uuid'?: string;
+  output?: string;
+  json?: boolean;
+}
+
+interface EnvListArgs extends PagArgs {
+  workspace?: string;
+  repo: string;
+  output?: string;
+  json?: boolean;
+}
+
+interface EnvGetArgs {
+  workspace?: string;
+  repo: string;
+  'environment-uuid': string;
+  output?: string;
+  json?: boolean;
+}
+
+interface EnvCreateArgs {
+  workspace?: string;
+  repo: string;
+  name?: string;
+  type?: string;
+  output?: string;
+  json?: boolean;
+}
+
+interface EnvDeleteArgs {
+  workspace?: string;
+  repo: string;
+  'environment-uuid': string;
+  output?: string;
+  json?: boolean;
+}
+
+interface DeployKeyListArgs extends PagArgs {
+  workspace?: string;
+  repo: string;
+  output?: string;
+  json?: boolean;
+}
+
+interface DeployKeyGetArgs {
+  workspace?: string;
+  repo: string;
+  'key-id': string;
+  output?: string;
+  json?: boolean;
+}
+
+interface DeployKeyCreateArgs {
+  workspace?: string;
+  repo: string;
+  key?: string;
+  label?: string;
+  output?: string;
+  json?: boolean;
+}
+
+interface DeployKeyDeleteArgs {
+  workspace?: string;
+  repo: string;
+  'key-id': string;
+  output?: string;
+  json?: boolean;
+}
+
+interface DownloadListArgs extends PagArgs {
+  workspace?: string;
+  repo: string;
+  output?: string;
+  json?: boolean;
+}
+
+interface DownloadDeleteArgs {
+  workspace?: string;
+  repo: string;
+  filename: string;
+  output?: string;
+  json?: boolean;
+}
+
+interface SnippetListArgs extends PagArgs {
+  workspace?: string;
+  output?: string;
+  json?: boolean;
+}
+
+interface SnippetGetArgs {
+  workspace?: string;
+  'snippet-id'?: string;
+  output?: string;
+  json?: boolean;
+}
+
+interface SnippetCreateArgs {
+  workspace?: string;
+  title?: string;
+  private?: boolean;
+  output?: string;
+  json?: boolean;
+}
+
+interface SnippetDeleteArgs {
+  workspace?: string;
+  'snippet-id'?: string;
+  output?: string;
+  json?: boolean;
+}
+
+interface IssueListArgs extends PagArgs {
+  workspace?: string;
+  repo: string;
+  query?: string;
+  sort?: string;
+  output?: string;
+  json?: boolean;
+}
+
+interface IssueGetArgs {
+  workspace?: string;
+  repo: string;
+  'issue-id': string;
+  output?: string;
+  json?: boolean;
+}
+
+interface IssueCreateArgs {
+  workspace?: string;
+  repo: string;
+  title?: string;
+  content?: string;
+  kind?: string;
+  priority?: string;
+  output?: string;
+  json?: boolean;
+}
+
+interface IssueUpdateArgs {
+  workspace?: string;
+  repo: string;
+  'issue-id': string;
+  title?: string;
+  state?: string;
+  kind?: string;
+  priority?: string;
+  output?: string;
+  json?: boolean;
+}
+
+interface IssueDeleteArgs {
+  workspace?: string;
+  repo: string;
+  'issue-id': string;
+  output?: string;
+  json?: boolean;
+}
+
+interface IssueCommentsArgs extends PagArgs {
+  workspace?: string;
+  repo: string;
+  'issue-id': string;
+  output?: string;
+  json?: boolean;
+}
+
+interface IssueCommentArgs {
+  workspace?: string;
+  repo: string;
+  'issue-id': string;
+  body?: string;
+  output?: string;
+  json?: boolean;
+}
+
+interface SearchCodeArgs extends PagArgs {
+  workspace?: string;
+  query?: string;
+  output?: string;
+  json?: boolean;
+}
+
+interface DeploymentListArgs extends PagArgs {
+  workspace?: string;
+  repo: string;
+  output?: string;
+  json?: boolean;
+}
+
+interface DeploymentGetArgs {
+  workspace?: string;
+  repo: string;
+  'deployment-uuid': string;
+  output?: string;
+  json?: boolean;
+}
+
+interface RestrictionListArgs extends PagArgs {
+  workspace?: string;
+  repo: string;
+  output?: string;
+  json?: boolean;
+}
+
+interface RestrictionGetArgs {
+  workspace?: string;
+  repo: string;
+  'restriction-id': string;
+  output?: string;
+  json?: boolean;
+}
+
+interface RestrictionCreateArgs {
+  workspace?: string;
+  repo: string;
+  kind?: string;
+  pattern?: string;
+  output?: string;
+  json?: boolean;
+}
+
+interface RestrictionDeleteArgs {
+  workspace?: string;
+  repo: string;
+  'restriction-id': string;
+  output?: string;
+  json?: boolean;
+}
 
 /**
  * Pagination options as yargs option definitions.
@@ -79,7 +830,7 @@ function printTable(headers: string[], rows: Cell[][]): void {
  * With 4 args: workspace=args[0], repo=args[1], prID=args[2], taskID=args[3].
  * With 3 args: workspace from profile default, repo=args[0], prID=args[1], taskID=args[2].
  */
-function resolveWorkspaceRepoIDAndTaskID(argv: any, args: string[]): [string, string, string, string] {
+function resolveWorkspaceRepoIDAndTaskID(argv: AnyArgv, args: string[]): [string, string, string, string] {
   if (args.length >= 4) {
     return [args[0], args[1], args[2], args[3]];
   }
@@ -97,7 +848,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
           'whoami',
           'Show the current authenticated Bitbucket user',
           () => {},
-          async (argv: any) => {
+          async (argv: ArgumentsCamelCase<WhoamiArgs>) => {
             const client = getBitbucketClient(argv);
             const user = await bbUser.getCurrentUser(client);
             if (isJSONOutput(argv)) { outputJSON(user); return; }
@@ -123,7 +874,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .option('query', { type: 'string', description: 'Filter with query (Bitbucket query syntax)' })
                   .option('sort', { type: 'string', description: 'Sort field (e.g. -updated_on)' })
                   .options(paginationOptions),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<RepoListArgs>) => {
                   const args = argv.workspace ? [argv.workspace] : [];
                   const workspace = defaultWorkspace(argv, args, 0);
                   const client = getBitbucketClient(argv);
@@ -146,7 +897,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                 (y: Argv) => y
                   .positional('workspace', { type: 'string' })
                   .positional('repo', { type: 'string', description: 'Repository slug' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<RepoGetArgs>) => {
                   const args = argv.workspace ? [argv.workspace, argv.repo] : [argv.repo];
                   const [workspace, repoSlug] = resolveWorkspaceAndRepo(argv, args);
                   const client = getBitbucketClient(argv);
@@ -175,7 +926,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .option('language', { type: 'string', description: 'Programming language' })
                   .option('private', { type: 'boolean', description: 'Make repository private', default: true })
                   .option('project', { type: 'string', description: 'Project key to assign to' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<RepoCreateArgs>) => {
                   const args = argv.workspace ? [argv.workspace] : [];
                   const workspace = defaultWorkspace(argv, args, 0);
                   if (!argv.name) throw new Error('--name is required');
@@ -184,7 +935,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   const req: CreateRepoRequest = {
                     scm: 'git',
                     name: argv.name,
-                    is_private: argv.private,
+                    is_private: argv.private ?? true,
                     description: argv.description,
                     language: argv.language,
                   };
@@ -199,7 +950,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                 (y: Argv) => y
                   .positional('workspace', { type: 'string' })
                   .positional('repo', { type: 'string' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<RepoDeleteArgs>) => {
                   const args = argv.workspace ? [argv.workspace, argv.repo] : [argv.repo];
                   const [workspace, repoSlug] = resolveWorkspaceAndRepo(argv, args);
                   const client = getBitbucketClient(argv);
@@ -215,7 +966,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .positional('repo', { type: 'string' })
                   .option('name', { type: 'string', description: 'Name for the forked repo' })
                   .option('workspace', { type: 'string', description: 'Target workspace for the fork' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<RepoForkArgs>) => {
                   const args = argv.workspace ? [argv.workspace, argv.repo] : [argv.repo];
                   const [workspace, repoSlug] = resolveWorkspaceAndRepo(argv, args);
                   const client = getBitbucketClient(argv);
@@ -232,7 +983,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .positional('workspace', { type: 'string' })
                   .positional('repo', { type: 'string' })
                   .options(paginationOptions),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<RepoForksArgs>) => {
                   const args = argv.workspace ? [argv.workspace, argv.repo] : [argv.repo];
                   const [workspace, repoSlug] = resolveWorkspaceAndRepo(argv, args);
                   const client = getBitbucketClient(argv);
@@ -262,7 +1013,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .option('state', { type: 'string', description: 'Filter by state (OPEN, MERGED, DECLINED, SUPERSEDED)', default: 'OPEN' })
                   .option('author', { type: 'string', description: "Filter by author Bitbucket username or UUID" })
                   .options(paginationOptions),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<PRListArgs>) => {
                   const args = argv.workspace ? [argv.workspace, argv.repo] : [argv.repo];
                   const [workspace, repoSlug] = resolveWorkspaceAndRepo(argv, args);
                   const client = getBitbucketClient(argv);
@@ -285,7 +1036,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .positional('workspace', { type: 'string' })
                   .positional('repo', { type: 'string' })
                   .positional('pr-id', { type: 'string' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<PRGetArgs>) => {
                   const args = argv.workspace ? [argv.workspace, argv.repo, argv['pr-id']] : [argv.repo, argv['pr-id']];
                   const [workspace, repoSlug, idStr] = resolveWorkspaceRepoAndID(argv, args);
                   const prID = parseInt(idStr, 10);
@@ -318,7 +1069,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .option('destination', { type: 'string', description: 'Destination branch name (defaults to main branch)' })
                   .option('description', { type: 'string', description: 'Pull request description' })
                   .option('close-source-branch', { type: 'boolean', description: 'Close source branch after merge', default: false }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<PRCreateArgs>) => {
                   const args = argv.workspace ? [argv.workspace, argv.repo] : [argv.repo];
                   const [workspace, repoSlug] = resolveWorkspaceAndRepo(argv, args);
                   if (!argv.title || !argv.source) throw new Error('--title and --source are required');
@@ -343,7 +1094,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .option('title', { type: 'string', description: 'New title' })
                   .option('description', { type: 'string', description: 'New description' })
                   .option('destination', { type: 'string', description: 'New destination branch' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<PRUpdateArgs>) => {
                   const args = argv.workspace ? [argv.workspace, argv.repo, argv['pr-id']] : [argv.repo, argv['pr-id']];
                   const [workspace, repoSlug, idStr] = resolveWorkspaceRepoAndID(argv, args);
                   const prID = parseInt(idStr, 10);
@@ -364,7 +1115,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .positional('workspace', { type: 'string' })
                   .positional('repo', { type: 'string' })
                   .positional('pr-id', { type: 'string' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<PRIdOnlyArgs>) => {
                   const args = argv.workspace ? [argv.workspace, argv.repo, argv['pr-id']] : [argv.repo, argv['pr-id']];
                   const [workspace, repoSlug, idStr] = resolveWorkspaceRepoAndID(argv, args);
                   const prID = parseInt(idStr, 10);
@@ -381,7 +1132,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .positional('workspace', { type: 'string' })
                   .positional('repo', { type: 'string' })
                   .positional('pr-id', { type: 'string' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<PRIdOnlyArgs>) => {
                   const args = argv.workspace ? [argv.workspace, argv.repo, argv['pr-id']] : [argv.repo, argv['pr-id']];
                   const [workspace, repoSlug, idStr] = resolveWorkspaceRepoAndID(argv, args);
                   const prID = parseInt(idStr, 10);
@@ -398,7 +1149,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .positional('workspace', { type: 'string' })
                   .positional('repo', { type: 'string' })
                   .positional('pr-id', { type: 'string' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<PRIdOnlyArgs>) => {
                   const args = argv.workspace ? [argv.workspace, argv.repo, argv['pr-id']] : [argv.repo, argv['pr-id']];
                   const [workspace, repoSlug, idStr] = resolveWorkspaceRepoAndID(argv, args);
                   const prID = parseInt(idStr, 10);
@@ -418,7 +1169,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .option('strategy', { type: 'string', description: 'Merge strategy (merge_commit, squash, fast_forward)' })
                   .option('message', { type: 'string', description: 'Merge commit message' })
                   .option('close-source-branch', { type: 'boolean', description: 'Close source branch after merge' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<PRMergeArgs>) => {
                   const args = argv.workspace ? [argv.workspace, argv.repo, argv['pr-id']] : [argv.repo, argv['pr-id']];
                   const [workspace, repoSlug, idStr] = resolveWorkspaceRepoAndID(argv, args);
                   const prID = parseInt(idStr, 10);
@@ -439,7 +1190,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .positional('workspace', { type: 'string' })
                   .positional('repo', { type: 'string' })
                   .positional('pr-id', { type: 'string' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<PRIdOnlyArgs>) => {
                   const args = argv.workspace ? [argv.workspace, argv.repo, argv['pr-id']] : [argv.repo, argv['pr-id']];
                   const [workspace, repoSlug, idStr] = resolveWorkspaceRepoAndID(argv, args);
                   const prID = parseInt(idStr, 10);
@@ -456,7 +1207,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .positional('workspace', { type: 'string' })
                   .positional('repo', { type: 'string' })
                   .positional('pr-id', { type: 'string' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<PRIdOnlyArgs>) => {
                   const args = argv.workspace ? [argv.workspace, argv.repo, argv['pr-id']] : [argv.repo, argv['pr-id']];
                   const [workspace, repoSlug, idStr] = resolveWorkspaceRepoAndID(argv, args);
                   const prID = parseInt(idStr, 10);
@@ -474,7 +1225,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .positional('repo', { type: 'string' })
                   .positional('pr-id', { type: 'string' })
                   .options(paginationOptions),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<PRCommentsArgs>) => {
                   const args = argv.workspace ? [argv.workspace, argv.repo, argv['pr-id']] : [argv.repo, argv['pr-id']];
                   const [workspace, repoSlug, idStr] = resolveWorkspaceRepoAndID(argv, args);
                   const prID = parseInt(idStr, 10);
@@ -499,7 +1250,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .option('body', { type: 'string', description: 'Comment body (required)' })
                   .option('file', { type: 'string', description: 'File path for an inline comment' })
                   .option('line', { type: 'number', description: 'Line number in the new version of the file (requires --file)', default: 0 }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<PRCommentArgs>) => {
                   const args = argv.workspace ? [argv.workspace, argv.repo, argv['pr-id']] : [argv.repo, argv['pr-id']];
                   const [workspace, repoSlug, idStr] = resolveWorkspaceRepoAndID(argv, args);
                   const prID = parseInt(idStr, 10);
@@ -509,7 +1260,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   if (argv.line && !argv.file) throw new Error('--file is required when --line is specified');
                   const client = getBitbucketClient(argv);
                   let inline: InlineCommentParams | undefined;
-                  if (argv.file) inline = { path: argv.file, to: argv.line };
+                  if (argv.file) inline = { path: argv.file, to: argv.line ?? 0 };
                   const comment = await bbPRs.createPRComment(client, workspace, repoSlug, prID, argv.body, inline);
                   outputResult(argv, 'created', String(comment.id), `Added comment #${comment.id} to PR #${prID}`, comment);
                 },
@@ -522,7 +1273,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .positional('repo', { type: 'string' })
                   .positional('pr-id', { type: 'string' })
                   .options(paginationOptions),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<PRCommentsArgs>) => {
                   const args = argv.workspace ? [argv.workspace, argv.repo, argv['pr-id']] : [argv.repo, argv['pr-id']];
                   const [workspace, repoSlug, idStr] = resolveWorkspaceRepoAndID(argv, args);
                   const prID = parseInt(idStr, 10);
@@ -547,7 +1298,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .positional('repo', { type: 'string' })
                   .positional('pr-id', { type: 'string' })
                   .options(paginationOptions),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<PRCommentsArgs>) => {
                   const args = argv.workspace ? [argv.workspace, argv.repo, argv['pr-id']] : [argv.repo, argv['pr-id']];
                   const [workspace, repoSlug, idStr] = resolveWorkspaceRepoAndID(argv, args);
                   const prID = parseInt(idStr, 10);
@@ -579,7 +1330,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .positional('repo', { type: 'string' })
                   .positional('pr-id', { type: 'string' })
                   .options(paginationOptions),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<PRCommentsArgs>) => {
                   const args = argv.workspace ? [argv.workspace, argv.repo, argv['pr-id']] : [argv.repo, argv['pr-id']];
                   const [workspace, repoSlug, idStr] = resolveWorkspaceRepoAndID(argv, args);
                   const prID = parseInt(idStr, 10);
@@ -587,7 +1338,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   const client = getBitbucketClient(argv);
                   const activities = await bbPRs.listPRActivity(client, workspace, repoSlug, prID, getBBPaginationOpts(argv));
                   if (isJSONOutput(argv)) { outputJSON(activities); return; }
-                  for (const a of activities as Array<Record<string, any>>) {
+                  for (const a of activities) {
                     if (a.approval) {
                       console.log(`[APPROVAL] ${a.approval.user?.display_name} approved on ${a.approval.date}`);
                     } else if (a.update) {
@@ -618,7 +1369,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                         .positional('repo', { type: 'string' })
                         .positional('pr-id', { type: 'string' })
                         .options(paginationOptions),
-                      async (argv: any) => {
+                      async (argv: ArgumentsCamelCase<PRTaskListArgs>) => {
                         const args = argv.workspace ? [argv.workspace, argv.repo, argv['pr-id']] : [argv.repo, argv['pr-id']];
                         const [workspace, repoSlug, idStr] = resolveWorkspaceRepoAndID(argv, args);
                         const prID = parseInt(idStr, 10);
@@ -640,7 +1391,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                         .positional('repo', { type: 'string' })
                         .positional('pr-id', { type: 'string' })
                         .positional('task-id', { type: 'string' }),
-                      async (argv: any) => {
+                      async (argv: ArgumentsCamelCase<PRTaskGetArgs>) => {
                         const rawArgs = argv.workspace
                           ? [argv.workspace, argv.repo, argv['pr-id'], argv['task-id']]
                           : [argv.repo, argv['pr-id'], argv['task-id']];
@@ -673,7 +1424,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                         .option('comment-id', { type: 'number', description: 'Associate task with a comment' })
                         .option('file', { type: 'string', description: 'File path to attach the task to a specific line (creates an inline comment)' })
                         .option('line', { type: 'number', description: 'Line number in the new version of the file (requires --file)', default: 0 }),
-                      async (argv: any) => {
+                      async (argv: ArgumentsCamelCase<PRTaskCreateArgs>) => {
                         const args = argv.workspace ? [argv.workspace, argv.repo, argv['pr-id']] : [argv.repo, argv['pr-id']];
                         const [workspace, repoSlug, idStr] = resolveWorkspaceRepoAndID(argv, args);
                         const prID = parseInt(idStr, 10);
@@ -685,7 +1436,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                         const client = getBitbucketClient(argv);
                         const req: CreatePRTaskRequest = { content: argv.body };
                         if (argv.file) {
-                          const comment = await bbPRs.createPRComment(client, workspace, repoSlug, prID, argv.body, { path: argv.file, to: argv.line });
+                          const comment = await bbPRs.createPRComment(client, workspace, repoSlug, prID, argv.body, { path: argv.file, to: argv.line ?? 0 });
                           req.comment_id = comment.id;
                         } else if (argv['comment-id']) {
                           req.comment_id = argv['comment-id'];
@@ -704,7 +1455,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                         .positional('task-id', { type: 'string' })
                         .option('body', { type: 'string', description: 'Updated task content' })
                         .option('state', { type: 'string', description: 'Task state (RESOLVED, UNRESOLVED)' }),
-                      async (argv: any) => {
+                      async (argv: ArgumentsCamelCase<PRTaskUpdateArgs>) => {
                         const rawArgs = argv.workspace
                           ? [argv.workspace, argv.repo, argv['pr-id'], argv['task-id']]
                           : [argv.repo, argv['pr-id'], argv['task-id']];
@@ -730,7 +1481,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                         .positional('repo', { type: 'string' })
                         .positional('pr-id', { type: 'string' })
                         .positional('task-id', { type: 'string' }),
-                      async (argv: any) => {
+                      async (argv: ArgumentsCamelCase<PRTaskSimpleArgs>) => {
                         const rawArgs = argv.workspace
                           ? [argv.workspace, argv.repo, argv['pr-id'], argv['task-id']]
                           : [argv.repo, argv['pr-id'], argv['task-id']];
@@ -752,7 +1503,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                         .positional('repo', { type: 'string' })
                         .positional('pr-id', { type: 'string' })
                         .positional('task-id', { type: 'string' }),
-                      async (argv: any) => {
+                      async (argv: ArgumentsCamelCase<PRTaskSimpleArgs>) => {
                         const rawArgs = argv.workspace
                           ? [argv.workspace, argv.repo, argv['pr-id'], argv['task-id']]
                           : [argv.repo, argv['pr-id'], argv['task-id']];
@@ -785,7 +1536,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .positional('repo', { type: 'string' })
                   .option('status', { type: 'string', description: 'Filter by status (PENDING, BUILDING, PASSED, FAILED, etc.)' })
                   .options(paginationOptions),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<PipelineListArgs>) => {
                   const args = argv.workspace ? [argv.workspace, argv.repo] : [argv.repo];
                   const [workspace, repoSlug] = resolveWorkspaceAndRepo(argv, args);
                   const client = getBitbucketClient(argv);
@@ -810,7 +1561,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .positional('workspace', { type: 'string' })
                   .positional('repo', { type: 'string' })
                   .positional('pipeline-uuid', { type: 'string' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<PipelineGetArgs>) => {
                   const args = argv.workspace ? [argv.workspace, argv.repo, argv['pipeline-uuid']] : [argv.repo, argv['pipeline-uuid']];
                   const [workspace, repoSlug, pipelineUUID] = resolveWorkspaceRepoAndID(argv, args);
                   const client = getBitbucketClient(argv);
@@ -836,7 +1587,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .positional('repo', { type: 'string' })
                   .option('branch', { type: 'string', description: 'Branch to run pipeline on (required)' })
                   .option('custom', { type: 'string', description: 'Custom pipeline pattern to run' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<PipelineRunArgs>) => {
                   const args = argv.workspace ? [argv.workspace, argv.repo] : [argv.repo];
                   const [workspace, repoSlug] = resolveWorkspaceAndRepo(argv, args);
                   if (!argv.branch) throw new Error('--branch is required');
@@ -856,7 +1607,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .positional('workspace', { type: 'string' })
                   .positional('repo', { type: 'string' })
                   .positional('pipeline-uuid', { type: 'string' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<PipelineGetArgs>) => {
                   const args = argv.workspace ? [argv.workspace, argv.repo, argv['pipeline-uuid']] : [argv.repo, argv['pipeline-uuid']];
                   const [workspace, repoSlug, pipelineUUID] = resolveWorkspaceRepoAndID(argv, args);
                   const client = getBitbucketClient(argv);
@@ -872,7 +1623,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .positional('repo', { type: 'string' })
                   .positional('pipeline-uuid', { type: 'string' })
                   .options(paginationOptions),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<PipelineStepsArgs>) => {
                   const args = argv.workspace ? [argv.workspace, argv.repo, argv['pipeline-uuid']] : [argv.repo, argv['pipeline-uuid']];
                   const [workspace, repoSlug, pipelineUUID] = resolveWorkspaceRepoAndID(argv, args);
                   const client = getBitbucketClient(argv);
@@ -894,9 +1645,15 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .positional('repo', { type: 'string' })
                   .positional('pipeline-uuid', { type: 'string' })
                   .positional('step-uuid', { type: 'string' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<PipelineStepArgs>) => {
                   const client = getBitbucketClient(argv);
-                  const step = await bbPipelines.getPipelineStep(client, argv.workspace ?? argv.repo, argv.workspace ? argv.repo : argv['pipeline-uuid'], argv.workspace ? argv['pipeline-uuid'] : argv['step-uuid'], argv.workspace ? argv['step-uuid'] : undefined);
+                  const step = await bbPipelines.getPipelineStep(
+                    client,
+                    argv.workspace ?? argv.repo,
+                    argv.workspace ? argv.repo : argv['pipeline-uuid'],
+                    argv.workspace ? argv['pipeline-uuid'] : argv['step-uuid'],
+                    (argv.workspace ? argv['step-uuid'] : undefined) as string,
+                  );
                   if (isJSONOutput(argv)) { outputJSON(step); return; }
                   const status = step.state?.result?.name ?? step.state?.name ?? '';
                   console.log(`UUID:      ${step.uuid}`);
@@ -914,9 +1671,9 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .positional('repo', { type: 'string' })
                   .positional('pipeline-uuid', { type: 'string' })
                   .positional('step-uuid', { type: 'string' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<PipelineStepArgs>) => {
                   const client = getBitbucketClient(argv);
-                  const log = await bbPipelines.getStepLog(client, argv.workspace, argv.repo, argv['pipeline-uuid'], argv['step-uuid']);
+                  const log = await bbPipelines.getStepLog(client, argv.workspace ?? '', argv.repo, argv['pipeline-uuid'], argv['step-uuid']);
                   process.stdout.write(log);
                 },
               )
@@ -927,7 +1684,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .positional('workspace', { type: 'string' })
                   .positional('repo', { type: 'string' })
                   .options(paginationOptions),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<PipelineVarsArgs>) => {
                   const args = argv.workspace ? [argv.workspace, argv.repo] : [argv.repo];
                   const [workspace, repoSlug] = resolveWorkspaceAndRepo(argv, args);
                   const client = getBitbucketClient(argv);
@@ -947,12 +1704,12 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .option('key', { type: 'string', description: 'Variable key (required)' })
                   .option('value', { type: 'string', description: 'Variable value (required)' })
                   .option('secured', { type: 'boolean', description: 'Mark variable as secured', default: false }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<PipelineAddVarArgs>) => {
                   const args = argv.workspace ? [argv.workspace, argv.repo] : [argv.repo];
                   const [workspace, repoSlug] = resolveWorkspaceAndRepo(argv, args);
                   if (!argv.key || !argv.value) throw new Error('--key and --value are required');
                   const client = getBitbucketClient(argv);
-                  const v = await bbPipelines.createPipelineVariable(client, workspace, repoSlug, argv.key, argv.value, argv.secured);
+                  const v = await bbPipelines.createPipelineVariable(client, workspace, repoSlug, argv.key, argv.value, argv.secured ?? false);
                   console.log(`Created variable: ${v.key} (UUID: ${v.uuid})`);
                 },
               )
@@ -963,7 +1720,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .positional('workspace', { type: 'string' })
                   .positional('repo', { type: 'string' })
                   .positional('variable-uuid', { type: 'string' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<PipelineDelVarArgs>) => {
                   const args = argv.workspace ? [argv.workspace, argv.repo, argv['variable-uuid']] : [argv.repo, argv['variable-uuid']];
                   const [workspace, repoSlug, varUUID] = resolveWorkspaceRepoAndID(argv, args);
                   const client = getBitbucketClient(argv);
@@ -988,7 +1745,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .positional('repo', { type: 'string' })
                   .option('query', { type: 'string', description: 'Filter branches (e.g. name ~ "feature")' })
                   .options(paginationOptions),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<BranchListArgs>) => {
                   const args = argv.workspace ? [argv.workspace, argv.repo] : [argv.repo];
                   const [workspace, repoSlug] = resolveWorkspaceAndRepo(argv, args);
                   const client = getBitbucketClient(argv);
@@ -1010,7 +1767,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .positional('workspace', { type: 'string' })
                   .positional('repo', { type: 'string' })
                   .positional('branch-name', { type: 'string' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<BranchGetArgs>) => {
                   const args = argv.workspace ? [argv.workspace, argv.repo, argv['branch-name']] : [argv.repo, argv['branch-name']];
                   const [workspace, repoSlug, branchName] = resolveWorkspaceRepoAndID(argv, args);
                   const client = getBitbucketClient(argv);
@@ -1030,7 +1787,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .positional('repo', { type: 'string' })
                   .option('name', { type: 'string', description: 'Branch name (required)' })
                   .option('target', { type: 'string', description: 'Target commit hash (required)' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<BranchCreateArgs>) => {
                   const args = argv.workspace ? [argv.workspace, argv.repo] : [argv.repo];
                   const [workspace, repoSlug] = resolveWorkspaceAndRepo(argv, args);
                   if (!argv.name || !argv.target) throw new Error('--name and --target are required');
@@ -1049,7 +1806,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .positional('workspace', { type: 'string' })
                   .positional('repo', { type: 'string' })
                   .positional('branch-name', { type: 'string' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<BranchDeleteArgs>) => {
                   const args = argv.workspace ? [argv.workspace, argv.repo, argv['branch-name']] : [argv.repo, argv['branch-name']];
                   const [workspace, repoSlug, branchName] = resolveWorkspaceRepoAndID(argv, args);
                   const client = getBitbucketClient(argv);
@@ -1074,7 +1831,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .positional('repo', { type: 'string' })
                   .option('query', { type: 'string', description: 'Filter tags (e.g. name ~ "v1")' })
                   .options(paginationOptions),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<TagListArgs>) => {
                   const args = argv.workspace ? [argv.workspace, argv.repo] : [argv.repo];
                   const [workspace, repoSlug] = resolveWorkspaceAndRepo(argv, args);
                   const client = getBitbucketClient(argv);
@@ -1100,7 +1857,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .positional('workspace', { type: 'string' })
                   .positional('repo', { type: 'string' })
                   .positional('tag-name', { type: 'string' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<TagGetArgs>) => {
                   const args = argv.workspace ? [argv.workspace, argv.repo, argv['tag-name']] : [argv.repo, argv['tag-name']];
                   const [workspace, repoSlug, tagName] = resolveWorkspaceRepoAndID(argv, args);
                   const client = getBitbucketClient(argv);
@@ -1120,7 +1877,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .option('name', { type: 'string', description: 'Tag name (required)' })
                   .option('target', { type: 'string', description: 'Target commit hash (required)' })
                   .option('message', { type: 'string', description: 'Tag message' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<TagCreateArgs>) => {
                   const args = argv.workspace ? [argv.workspace, argv.repo] : [argv.repo];
                   const [workspace, repoSlug] = resolveWorkspaceAndRepo(argv, args);
                   if (!argv.name || !argv.target) throw new Error('--name and --target are required');
@@ -1140,7 +1897,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .positional('workspace', { type: 'string' })
                   .positional('repo', { type: 'string' })
                   .positional('tag-name', { type: 'string' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<TagDeleteArgs>) => {
                   const args = argv.workspace ? [argv.workspace, argv.repo, argv['tag-name']] : [argv.repo, argv['tag-name']];
                   const [workspace, repoSlug, tagName] = resolveWorkspaceRepoAndID(argv, args);
                   const client = getBitbucketClient(argv);
@@ -1166,7 +1923,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .option('include', { type: 'string', description: 'Include commits reachable from this ref' })
                   .option('exclude', { type: 'string', description: 'Exclude commits reachable from this ref' })
                   .options(paginationOptions),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<CommitListArgs>) => {
                   const args = argv.workspace ? [argv.workspace, argv.repo] : [argv.repo];
                   const [workspace, repoSlug] = resolveWorkspaceAndRepo(argv, args);
                   const client = getBitbucketClient(argv);
@@ -1193,7 +1950,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .positional('workspace', { type: 'string' })
                   .positional('repo', { type: 'string' })
                   .positional('commit-hash', { type: 'string' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<CommitGetArgs>) => {
                   const args = argv.workspace ? [argv.workspace, argv.repo, argv['commit-hash']] : [argv.repo, argv['commit-hash']];
                   const [workspace, repoSlug, commitHash] = resolveWorkspaceRepoAndID(argv, args);
                   const client = getBitbucketClient(argv);
@@ -1217,7 +1974,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .positional('repo', { type: 'string' })
                   .positional('commit-hash', { type: 'string' })
                   .options(paginationOptions),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<CommitStatusesArgs>) => {
                   const args = argv.workspace ? [argv.workspace, argv.repo, argv['commit-hash']] : [argv.repo, argv['commit-hash']];
                   const [workspace, repoSlug, commitHash] = resolveWorkspaceRepoAndID(argv, args);
                   const client = getBitbucketClient(argv);
@@ -1236,7 +1993,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .positional('workspace', { type: 'string' })
                   .positional('repo', { type: 'string' })
                   .positional('spec', { type: 'string' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<CommitDiffArgs>) => {
                   const args = argv.workspace ? [argv.workspace, argv.repo, argv.spec] : [argv.repo, argv.spec];
                   const [workspace, repoSlug, spec] = resolveWorkspaceRepoAndID(argv, args);
                   const client = getBitbucketClient(argv);
@@ -1257,7 +2014,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                 ['list', 'ls'],
                 'List workspaces',
                 (y: Argv) => y.options(paginationOptions),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<WorkspaceListArgs>) => {
                   const client = getBitbucketClient(argv);
                   const workspaces = await bbWorkspaces.listWorkspaces(client, getBBPaginationOpts(argv));
                   if (isJSONOutput(argv)) { outputJSON(workspaces); return; }
@@ -1271,7 +2028,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                 'get [workspace]',
                 'Get workspace details',
                 (y: Argv) => y.positional('workspace', { type: 'string' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<WorkspaceGetArgs>) => {
                   const args = argv.workspace ? [argv.workspace] : [];
                   const workspace = defaultWorkspace(argv, args, 0);
                   const client = getBitbucketClient(argv);
@@ -1290,7 +2047,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                 (y: Argv) => y
                   .positional('workspace', { type: 'string' })
                   .options(paginationOptions),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<WorkspaceMembersArgs>) => {
                   const args = argv.workspace ? [argv.workspace] : [];
                   const workspace = defaultWorkspace(argv, args, 0);
                   const client = getBitbucketClient(argv);
@@ -1308,7 +2065,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                 (y: Argv) => y
                   .positional('workspace', { type: 'string' })
                   .options(paginationOptions),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<WorkspaceMembersArgs>) => {
                   const args = argv.workspace ? [argv.workspace] : [];
                   const workspace = defaultWorkspace(argv, args, 0);
                   const client = getBitbucketClient(argv);
@@ -1335,7 +2092,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                 (y: Argv) => y
                   .positional('workspace', { type: 'string' })
                   .options(paginationOptions),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ProjectListArgs>) => {
                   const args = argv.workspace ? [argv.workspace] : [];
                   const workspace = defaultWorkspace(argv, args, 0);
                   const client = getBitbucketClient(argv);
@@ -1353,14 +2110,14 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                 (y: Argv) => y
                   .positional('workspace', { type: 'string' })
                   .positional('project-key', { type: 'string' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ProjectGetArgs>) => {
                   let workspace: string, projectKey: string;
                   if (argv.workspace && argv['project-key']) {
                     workspace = argv.workspace;
                     projectKey = argv['project-key'];
                   } else {
                     workspace = defaultWorkspace(argv, [], 0);
-                    projectKey = argv.workspace ?? argv['project-key'];
+                    projectKey = argv.workspace ?? argv['project-key'] ?? '';
                   }
                   const client = getBitbucketClient(argv);
                   const project = await bbProjects.getProject(client, workspace, projectKey);
@@ -1382,7 +2139,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .option('key', { type: 'string', description: 'Project key (required)' })
                   .option('description', { type: 'string', description: 'Project description' })
                   .option('private', { type: 'boolean', description: 'Make project private', default: true }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ProjectCreateArgs>) => {
                   const args = argv.workspace ? [argv.workspace] : [];
                   const workspace = defaultWorkspace(argv, args, 0);
                   if (!argv.name || !argv.key) throw new Error('--name and --key are required');
@@ -1403,14 +2160,14 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                 (y: Argv) => y
                   .positional('workspace', { type: 'string' })
                   .positional('project-key', { type: 'string' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ProjectDeleteArgs>) => {
                   let workspace: string, projectKey: string;
                   if (argv.workspace && argv['project-key']) {
                     workspace = argv.workspace;
                     projectKey = argv['project-key'];
                   } else {
                     workspace = defaultWorkspace(argv, [], 0);
-                    projectKey = argv.workspace ?? argv['project-key'];
+                    projectKey = argv.workspace ?? argv['project-key'] ?? '';
                   }
                   const client = getBitbucketClient(argv);
                   await bbProjects.deleteProject(client, workspace, projectKey);
@@ -1433,7 +2190,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .positional('workspace', { type: 'string' })
                   .positional('repo', { type: 'string' })
                   .options(paginationOptions),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<WebhookListArgs>) => {
                   const args = argv.workspace ? [argv.workspace, argv.repo] : [argv.repo];
                   const [workspace, repoSlug] = resolveWorkspaceAndRepo(argv, args);
                   const client = getBitbucketClient(argv);
@@ -1452,7 +2209,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .positional('workspace', { type: 'string' })
                   .positional('repo', { type: 'string' })
                   .positional('webhook-uuid', { type: 'string' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<WebhookGetArgs>) => {
                   const args = argv.workspace ? [argv.workspace, argv.repo, argv['webhook-uuid']] : [argv.repo, argv['webhook-uuid']];
                   const [workspace, repoSlug, hookUUID] = resolveWorkspaceRepoAndID(argv, args);
                   const client = getBitbucketClient(argv);
@@ -1474,15 +2231,15 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .option('description', { type: 'string', description: 'Webhook description' })
                   .option('events', { type: 'array', description: 'Events to subscribe to (required, e.g. repo:push pullrequest:created)' })
                   .option('active', { type: 'boolean', description: 'Whether the webhook is active', default: true }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<WebhookCreateArgs>) => {
                   const args = argv.workspace ? [argv.workspace, argv.repo] : [argv.repo];
                   const [workspace, repoSlug] = resolveWorkspaceAndRepo(argv, args);
                   if (!argv.url || !argv.events?.length) throw new Error('--url and --events are required');
                   const client = getBitbucketClient(argv);
                   const hook = await bbWebhooks.createRepoWebhook(client, workspace, repoSlug, {
-                    description: argv.description,
+                    description: argv.description ?? '',
                     url: argv.url,
-                    active: argv.active,
+                    active: argv.active ?? true,
                     events: argv.events,
                   });
                   console.log(`Created webhook: ${hook.uuid}`);
@@ -1500,7 +2257,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .option('description', { type: 'string', description: 'Webhook description' })
                   .option('events', { type: 'array', description: 'Events to subscribe to' })
                   .option('active', { type: 'boolean', description: 'Whether the webhook is active' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<WebhookUpdateArgs>) => {
                   const args = argv.workspace ? [argv.workspace, argv.repo, argv['webhook-uuid']] : [argv.repo, argv['webhook-uuid']];
                   const [workspace, repoSlug, hookUUID] = resolveWorkspaceRepoAndID(argv, args);
                   const client = getBitbucketClient(argv);
@@ -1520,7 +2277,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .positional('workspace', { type: 'string' })
                   .positional('repo', { type: 'string' })
                   .positional('webhook-uuid', { type: 'string' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<WebhookDeleteArgs>) => {
                   const args = argv.workspace ? [argv.workspace, argv.repo, argv['webhook-uuid']] : [argv.repo, argv['webhook-uuid']];
                   const [workspace, repoSlug, hookUUID] = resolveWorkspaceRepoAndID(argv, args);
                   const client = getBitbucketClient(argv);
@@ -1534,7 +2291,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                 (y: Argv) => y
                   .positional('workspace', { type: 'string' })
                   .options(paginationOptions),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<WorkspaceWebhookListArgs>) => {
                   const args = argv.workspace ? [argv.workspace] : [];
                   const workspace = defaultWorkspace(argv, args, 0);
                   const client = getBitbucketClient(argv);
@@ -1555,15 +2312,15 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .option('description', { type: 'string', description: 'Webhook description' })
                   .option('events', { type: 'array', description: 'Events to subscribe to (required)' })
                   .option('active', { type: 'boolean', description: 'Whether the webhook is active', default: true }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<WorkspaceWebhookCreateArgs>) => {
                   const args = argv.workspace ? [argv.workspace] : [];
                   const workspace = defaultWorkspace(argv, args, 0);
                   if (!argv.url || !argv.events?.length) throw new Error('--url and --events are required');
                   const client = getBitbucketClient(argv);
                   const hook = await bbWebhooks.createWorkspaceWebhook(client, workspace, {
-                    description: argv.description,
+                    description: argv.description ?? '',
                     url: argv.url,
-                    active: argv.active,
+                    active: argv.active ?? true,
                     events: argv.events,
                   });
                   console.log(`Created workspace webhook: ${hook.uuid}`);
@@ -1575,14 +2332,14 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                 (y: Argv) => y
                   .positional('workspace', { type: 'string' })
                   .positional('webhook-uuid', { type: 'string' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<WorkspaceWebhookDeleteArgs>) => {
                   let workspace: string, hookUUID: string;
                   if (argv.workspace && argv['webhook-uuid']) {
                     workspace = argv.workspace;
                     hookUUID = argv['webhook-uuid'];
                   } else {
                     workspace = defaultWorkspace(argv, [], 0);
-                    hookUUID = argv.workspace ?? argv['webhook-uuid'];
+                    hookUUID = argv.workspace ?? argv['webhook-uuid'] ?? '';
                   }
                   const client = getBitbucketClient(argv);
                   await bbWebhooks.deleteWorkspaceWebhook(client, workspace, hookUUID);
@@ -1605,7 +2362,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .positional('workspace', { type: 'string' })
                   .positional('repo', { type: 'string' })
                   .options(paginationOptions),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<EnvListArgs>) => {
                   const args = argv.workspace ? [argv.workspace, argv.repo] : [argv.repo];
                   const [workspace, repoSlug] = resolveWorkspaceAndRepo(argv, args);
                   const client = getBitbucketClient(argv);
@@ -1624,7 +2381,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .positional('workspace', { type: 'string' })
                   .positional('repo', { type: 'string' })
                   .positional('environment-uuid', { type: 'string' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<EnvGetArgs>) => {
                   const args = argv.workspace ? [argv.workspace, argv.repo, argv['environment-uuid']] : [argv.repo, argv['environment-uuid']];
                   const [workspace, repoSlug, envUUID] = resolveWorkspaceRepoAndID(argv, args);
                   const client = getBitbucketClient(argv);
@@ -1643,7 +2400,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .positional('repo', { type: 'string' })
                   .option('name', { type: 'string', description: 'Environment name (required)' })
                   .option('type', { type: 'string', description: 'Environment type (Test, Staging, Production)', default: 'Test' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<EnvCreateArgs>) => {
                   const args = argv.workspace ? [argv.workspace, argv.repo] : [argv.repo];
                   const [workspace, repoSlug] = resolveWorkspaceAndRepo(argv, args);
                   if (!argv.name) throw new Error('--name is required');
@@ -1665,7 +2422,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .positional('workspace', { type: 'string' })
                   .positional('repo', { type: 'string' })
                   .positional('environment-uuid', { type: 'string' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<EnvDeleteArgs>) => {
                   const args = argv.workspace ? [argv.workspace, argv.repo, argv['environment-uuid']] : [argv.repo, argv['environment-uuid']];
                   const [workspace, repoSlug, envUUID] = resolveWorkspaceRepoAndID(argv, args);
                   const client = getBitbucketClient(argv);
@@ -1689,7 +2446,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .positional('workspace', { type: 'string' })
                   .positional('repo', { type: 'string' })
                   .options(paginationOptions),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<DeployKeyListArgs>) => {
                   const args = argv.workspace ? [argv.workspace, argv.repo] : [argv.repo];
                   const [workspace, repoSlug] = resolveWorkspaceAndRepo(argv, args);
                   const client = getBitbucketClient(argv);
@@ -1708,7 +2465,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .positional('workspace', { type: 'string' })
                   .positional('repo', { type: 'string' })
                   .positional('key-id', { type: 'string' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<DeployKeyGetArgs>) => {
                   const args = argv.workspace ? [argv.workspace, argv.repo, argv['key-id']] : [argv.repo, argv['key-id']];
                   const [workspace, repoSlug, idStr] = resolveWorkspaceRepoAndID(argv, args);
                   const keyID = parseInt(idStr, 10);
@@ -1730,7 +2487,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .positional('repo', { type: 'string' })
                   .option('key', { type: 'string', description: 'SSH public key content (required)' })
                   .option('label', { type: 'string', description: 'Label for the key (required)' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<DeployKeyCreateArgs>) => {
                   const args = argv.workspace ? [argv.workspace, argv.repo] : [argv.repo];
                   const [workspace, repoSlug] = resolveWorkspaceAndRepo(argv, args);
                   if (!argv.key || !argv.label) throw new Error('--key and --label are required');
@@ -1749,7 +2506,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .positional('workspace', { type: 'string' })
                   .positional('repo', { type: 'string' })
                   .positional('key-id', { type: 'string' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<DeployKeyDeleteArgs>) => {
                   const args = argv.workspace ? [argv.workspace, argv.repo, argv['key-id']] : [argv.repo, argv['key-id']];
                   const [workspace, repoSlug, idStr] = resolveWorkspaceRepoAndID(argv, args);
                   const keyID = parseInt(idStr, 10);
@@ -1775,7 +2532,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .positional('workspace', { type: 'string' })
                   .positional('repo', { type: 'string' })
                   .options(paginationOptions),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<DownloadListArgs>) => {
                   const args = argv.workspace ? [argv.workspace, argv.repo] : [argv.repo];
                   const [workspace, repoSlug] = resolveWorkspaceAndRepo(argv, args);
                   const client = getBitbucketClient(argv);
@@ -1794,7 +2551,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .positional('workspace', { type: 'string' })
                   .positional('repo', { type: 'string' })
                   .positional('filename', { type: 'string' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<DownloadDeleteArgs>) => {
                   const args = argv.workspace ? [argv.workspace, argv.repo, argv.filename] : [argv.repo, argv.filename];
                   const [workspace, repoSlug, filename] = resolveWorkspaceRepoAndID(argv, args);
                   const client = getBitbucketClient(argv);
@@ -1817,7 +2574,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                 (y: Argv) => y
                   .positional('workspace', { type: 'string' })
                   .options(paginationOptions),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<SnippetListArgs>) => {
                   const args = argv.workspace ? [argv.workspace] : [];
                   const workspace = defaultWorkspace(argv, args, 0);
                   const client = getBitbucketClient(argv);
@@ -1835,14 +2592,14 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                 (y: Argv) => y
                   .positional('workspace', { type: 'string' })
                   .positional('snippet-id', { type: 'string' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<SnippetGetArgs>) => {
                   let workspace: string, snippetID: string;
                   if (argv.workspace && argv['snippet-id']) {
                     workspace = argv.workspace;
                     snippetID = argv['snippet-id'];
                   } else {
                     workspace = defaultWorkspace(argv, [], 0);
-                    snippetID = argv.workspace ?? argv['snippet-id'];
+                    snippetID = argv.workspace ?? argv['snippet-id'] ?? '';
                   }
                   const client = getBitbucketClient(argv);
                   const snippet = await bbSnippets.getSnippet(client, workspace, snippetID);
@@ -1862,14 +2619,14 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .positional('workspace', { type: 'string' })
                   .option('title', { type: 'string', description: 'Snippet title (required)' })
                   .option('private', { type: 'boolean', description: 'Make snippet private', default: false }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<SnippetCreateArgs>) => {
                   const args = argv.workspace ? [argv.workspace] : [];
                   const workspace = defaultWorkspace(argv, args, 0);
                   if (!argv.title) throw new Error('--title is required');
                   const client = getBitbucketClient(argv);
                   const snippet = await bbSnippets.createSnippet(client, workspace, {
                     title: argv.title,
-                    is_private: argv.private,
+                    is_private: argv.private ?? false,
                   });
                   console.log(`Created snippet: ${snippet.title} (ID: ${snippet.id})`);
                   console.log(`URL: ${snippet.links?.html?.href}`);
@@ -1881,14 +2638,14 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                 (y: Argv) => y
                   .positional('workspace', { type: 'string' })
                   .positional('snippet-id', { type: 'string' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<SnippetDeleteArgs>) => {
                   let workspace: string, snippetID: string;
                   if (argv.workspace && argv['snippet-id']) {
                     workspace = argv.workspace;
                     snippetID = argv['snippet-id'];
                   } else {
                     workspace = defaultWorkspace(argv, [], 0);
-                    snippetID = argv.workspace ?? argv['snippet-id'];
+                    snippetID = argv.workspace ?? argv['snippet-id'] ?? '';
                   }
                   const client = getBitbucketClient(argv);
                   await bbSnippets.deleteSnippet(client, workspace, snippetID);
@@ -1913,7 +2670,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .option('query', { type: 'string', description: 'Filter issues (Bitbucket query syntax)' })
                   .option('sort', { type: 'string', description: 'Sort field (e.g. -priority)' })
                   .options(paginationOptions),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<IssueListArgs>) => {
                   const args = argv.workspace ? [argv.workspace, argv.repo] : [argv.repo];
                   const [workspace, repoSlug] = resolveWorkspaceAndRepo(argv, args);
                   const client = getBitbucketClient(argv);
@@ -1943,7 +2700,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .positional('workspace', { type: 'string' })
                   .positional('repo', { type: 'string' })
                   .positional('issue-id', { type: 'string' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<IssueGetArgs>) => {
                   const args = argv.workspace ? [argv.workspace, argv.repo, argv['issue-id']] : [argv.repo, argv['issue-id']];
                   const [workspace, repoSlug, idStr] = resolveWorkspaceRepoAndID(argv, args);
                   const issueID = parseInt(idStr, 10);
@@ -1977,7 +2734,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .option('content', { type: 'string', description: 'Issue content/description' })
                   .option('kind', { type: 'string', description: 'Issue kind (bug, enhancement, proposal, task)', default: 'bug' })
                   .option('priority', { type: 'string', description: 'Issue priority (trivial, minor, major, critical, blocker)', default: 'major' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<IssueCreateArgs>) => {
                   const args = argv.workspace ? [argv.workspace, argv.repo] : [argv.repo];
                   const [workspace, repoSlug] = resolveWorkspaceAndRepo(argv, args);
                   if (!argv.title) throw new Error('--title is required');
@@ -2004,7 +2761,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .option('state', { type: 'string', description: 'New state (new, open, resolved, on hold, invalid, duplicate, wontfix, closed)' })
                   .option('kind', { type: 'string', description: 'New kind' })
                   .option('priority', { type: 'string', description: 'New priority' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<IssueUpdateArgs>) => {
                   const args = argv.workspace ? [argv.workspace, argv.repo, argv['issue-id']] : [argv.repo, argv['issue-id']];
                   const [workspace, repoSlug, idStr] = resolveWorkspaceRepoAndID(argv, args);
                   const issueID = parseInt(idStr, 10);
@@ -2027,7 +2784,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .positional('workspace', { type: 'string' })
                   .positional('repo', { type: 'string' })
                   .positional('issue-id', { type: 'string' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<IssueDeleteArgs>) => {
                   const args = argv.workspace ? [argv.workspace, argv.repo, argv['issue-id']] : [argv.repo, argv['issue-id']];
                   const [workspace, repoSlug, idStr] = resolveWorkspaceRepoAndID(argv, args);
                   const issueID = parseInt(idStr, 10);
@@ -2045,7 +2802,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .positional('repo', { type: 'string' })
                   .positional('issue-id', { type: 'string' })
                   .options(paginationOptions),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<IssueCommentsArgs>) => {
                   const args = argv.workspace ? [argv.workspace, argv.repo, argv['issue-id']] : [argv.repo, argv['issue-id']];
                   const [workspace, repoSlug, idStr] = resolveWorkspaceRepoAndID(argv, args);
                   const issueID = parseInt(idStr, 10);
@@ -2067,7 +2824,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .positional('repo', { type: 'string' })
                   .positional('issue-id', { type: 'string' })
                   .option('body', { type: 'string', description: 'Comment body (required)' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<IssueCommentArgs>) => {
                   const args = argv.workspace ? [argv.workspace, argv.repo, argv['issue-id']] : [argv.repo, argv['issue-id']];
                   const [workspace, repoSlug, idStr] = resolveWorkspaceRepoAndID(argv, args);
                   const issueID = parseInt(idStr, 10);
@@ -2093,7 +2850,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                 .positional('workspace', { type: 'string' })
                 .option('query', { type: 'string', description: 'Search query (required)' })
                 .options(paginationOptions),
-              async (argv: any) => {
+              async (argv: ArgumentsCamelCase<SearchCodeArgs>) => {
                 const args = argv.workspace ? [argv.workspace] : [];
                 const workspace = defaultWorkspace(argv, args, 0);
                 if (!argv.query) throw new Error('--query is required');
@@ -2131,7 +2888,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .positional('workspace', { type: 'string' })
                   .positional('repo', { type: 'string' })
                   .options(paginationOptions),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<DeploymentListArgs>) => {
                   const args = argv.workspace ? [argv.workspace, argv.repo] : [argv.repo];
                   const [workspace, repoSlug] = resolveWorkspaceAndRepo(argv, args);
                   const client = getBitbucketClient(argv);
@@ -2153,7 +2910,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .positional('workspace', { type: 'string' })
                   .positional('repo', { type: 'string' })
                   .positional('deployment-uuid', { type: 'string' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<DeploymentGetArgs>) => {
                   const args = argv.workspace ? [argv.workspace, argv.repo, argv['deployment-uuid']] : [argv.repo, argv['deployment-uuid']];
                   const [workspace, repoSlug, deployUUID] = resolveWorkspaceRepoAndID(argv, args);
                   const client = getBitbucketClient(argv);
@@ -2184,7 +2941,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .positional('workspace', { type: 'string' })
                   .positional('repo', { type: 'string' })
                   .options(paginationOptions),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<RestrictionListArgs>) => {
                   const args = argv.workspace ? [argv.workspace, argv.repo] : [argv.repo];
                   const [workspace, repoSlug] = resolveWorkspaceAndRepo(argv, args);
                   const client = getBitbucketClient(argv);
@@ -2203,7 +2960,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .positional('workspace', { type: 'string' })
                   .positional('repo', { type: 'string' })
                   .positional('restriction-id', { type: 'string' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<RestrictionGetArgs>) => {
                   const args = argv.workspace ? [argv.workspace, argv.repo, argv['restriction-id']] : [argv.repo, argv['restriction-id']];
                   const [workspace, repoSlug, idStr] = resolveWorkspaceRepoAndID(argv, args);
                   const id = parseInt(idStr, 10);
@@ -2232,7 +2989,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .positional('repo', { type: 'string' })
                   .option('kind', { type: 'string', description: 'Restriction kind (e.g. push, force, delete, restrict_merges, require_approvals_to_merge)' })
                   .option('pattern', { type: 'string', description: 'Branch pattern (e.g. main, release/*)' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<RestrictionCreateArgs>) => {
                   const args = argv.workspace ? [argv.workspace, argv.repo] : [argv.repo];
                   const [workspace, repoSlug] = resolveWorkspaceAndRepo(argv, args);
                   if (!argv.kind || !argv.pattern) throw new Error('--kind and --pattern are required');
@@ -2251,7 +3008,7 @@ export function registerBitbucketCommands(yargs: Argv): Argv {
                   .positional('workspace', { type: 'string' })
                   .positional('repo', { type: 'string' })
                   .positional('restriction-id', { type: 'string' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<RestrictionDeleteArgs>) => {
                   const args = argv.workspace ? [argv.workspace, argv.repo, argv['restriction-id']] : [argv.repo, argv['restriction-id']];
                   const [workspace, repoSlug, idStr] = resolveWorkspaceRepoAndID(argv, args);
                   const id = parseInt(idStr, 10);

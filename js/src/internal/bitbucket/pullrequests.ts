@@ -1,6 +1,6 @@
 import { get, getRaw, post, put, deleteNoContent, getAll, addPaginationParams } from './client.js';
 import type { BitbucketClient, PaginationOptions, PaginatedResponse } from './client.js';
-import type { PullRequest, CreatePRRequest, UpdatePRRequest, MergePRRequest, Participant, PRComment, InlineCommentParams, PRTask, CreatePRTaskRequest, UpdatePRTaskRequest, Commit, DiffStat } from './types.js';
+import type { PullRequest, CreatePRRequest, UpdatePRRequest, MergePRRequest, Participant, PRComment, InlineCommentParams, PRTask, CreatePRTaskRequest, UpdatePRTaskRequest, Commit, DiffStat, PRActivity } from './types.js';
 
 export interface ListPullRequestsOptions extends PaginationOptions {
   state?: string;
@@ -188,14 +188,14 @@ export async function getPRDiffStat(client: BitbucketClient, workspace: string, 
   return page.values ?? [];
 }
 
-export async function listPRActivity(client: BitbucketClient, workspace: string, repoSlug: string, prID: number, opts?: PaginationOptions): Promise<unknown[]> {
+export async function listPRActivity(client: BitbucketClient, workspace: string, repoSlug: string, prID: number, opts?: PaginationOptions): Promise<PRActivity[]> {
   let path = `/repositories/${encodeURIComponent(workspace)}/${encodeURIComponent(repoSlug)}/pullrequests/${prID}/activity`;
   path = addPaginationParams(path, opts);
 
   if (opts?.all) {
-    return getAll<unknown>(client, path);
+    return getAll<PRActivity>(client, path);
   }
 
-  const page = await get<PaginatedResponse<unknown>>(client, path);
+  const page = await get<PaginatedResponse<PRActivity>>(client, path);
   return page.values ?? [];
 }

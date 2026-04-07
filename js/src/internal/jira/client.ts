@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import type { Profile } from '../config/config.js';
+import type { JsonBody } from '../types.js';
 
 export interface JiraClient {
   baseURL: string;
@@ -51,12 +52,17 @@ function authHeader(client: JiraClient): string {
   return `Bearer ${client.apiToken}`;
 }
 
+interface JiraErrorBody {
+  errorMessages?: string[];
+  errors?: Record<string, string>;
+}
+
 async function handleError(response: Response): Promise<never> {
   const text = await response.text();
   let errorMessages: string[] = [];
   let errors: Record<string, string> = {};
   try {
-    const parsed = JSON.parse(text);
+    const parsed = JSON.parse(text) as JiraErrorBody;
     errorMessages = parsed.errorMessages || [];
     errors = parsed.errors || {};
   } catch {
@@ -105,7 +111,7 @@ async function doRequest(
 /**
  * GET request. Parses JSON response.
  */
-export async function get<T = any>(
+export async function get<T>(
   client: JiraClient,
   urlPath: string,
   query?: Record<string, string>,
@@ -119,10 +125,10 @@ export async function get<T = any>(
 /**
  * POST request with JSON body. Parses JSON response.
  */
-export async function post<T = any>(
+export async function post<T>(
   client: JiraClient,
   urlPath: string,
-  body?: unknown,
+  body?: JsonBody,
 ): Promise<T> {
   const url = buildURL(client.baseURL, urlPath);
   const response = await doRequest(client, 'POST', url, {
@@ -136,10 +142,10 @@ export async function post<T = any>(
 /**
  * PUT request with JSON body. Parses JSON response.
  */
-export async function put<T = any>(
+export async function put<T>(
   client: JiraClient,
   urlPath: string,
-  body?: unknown,
+  body?: JsonBody,
 ): Promise<T> {
   const url = buildURL(client.baseURL, urlPath);
   const response = await doRequest(client, 'PUT', url, {
@@ -165,10 +171,10 @@ export async function del(
 /**
  * DELETE request with JSON body. Parses JSON response.
  */
-export async function deleteWithBody<T = any>(
+export async function deleteWithBody<T>(
   client: JiraClient,
   urlPath: string,
-  body?: unknown,
+  body?: JsonBody,
 ): Promise<T> {
   const url = buildURL(client.baseURL, urlPath);
   const response = await doRequest(client, 'DELETE', url, {
@@ -182,10 +188,10 @@ export async function deleteWithBody<T = any>(
 /**
  * PATCH request with JSON body. Parses JSON response.
  */
-export async function patch<T = any>(
+export async function patch<T>(
   client: JiraClient,
   urlPath: string,
-  body?: unknown,
+  body?: JsonBody,
 ): Promise<T> {
   const url = buildURL(client.baseURL, urlPath);
   const response = await doRequest(client, 'PATCH', url, {
@@ -199,7 +205,7 @@ export async function patch<T = any>(
 /**
  * Multipart file upload. Parses JSON response.
  */
-export async function uploadFile<T = any>(
+export async function uploadFile<T>(
   client: JiraClient,
   urlPath: string,
   fieldName: string,
@@ -212,8 +218,11 @@ export async function uploadFile<T = any>(
   const form = new FormData();
   form.append(fieldName, new Blob([fileBuffer]), fileName);
 
+  // Node's FormData (web spec) is an acceptable BodyInit, but TypeScript's
+  // BodyInit type lacks the FormData overload here, so cast through the
+  // structurally compatible interface explicitly.
   const response = await doRequest(client, 'POST', url, {
-    body: form as unknown as BodyInit,
+    body: form as FormData,
     headers: { 'X-Atlassian-Token': 'no-check' },
   });
   if (response.status === 204) return null as T;

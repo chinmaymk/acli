@@ -1,5 +1,6 @@
 import { get, post, put, del, uploadFile } from './client.js';
 import type { JiraClient } from './client.js';
+import type { ADFNode, JsonBody, JsonValue } from '../types.js';
 import type {
   Attachment,
   BulkIssueCreateRequest,
@@ -123,10 +124,10 @@ export async function getIssueComments(
 export async function addIssueComment(
   client: JiraClient,
   issueIdOrKey: string,
-  body: unknown,
+  body: ADFNode,
   visibility?: Visibility | undefined,
 ): Promise<Comment> {
-  const reqBody: Record<string, unknown> = { body };
+  const reqBody: { body: ADFNode; visibility?: Visibility } = { body };
   if (visibility != null) {
     reqBody.visibility = visibility;
   }
@@ -147,10 +148,10 @@ export async function updateIssueComment(
   client: JiraClient,
   issueIdOrKey: string,
   commentId: string,
-  body: unknown,
+  body: ADFNode,
   visibility?: Visibility | undefined,
 ): Promise<Comment> {
-  const reqBody: Record<string, unknown> = { body };
+  const reqBody: { body: ADFNode; visibility?: Visibility } = { body };
   if (visibility != null) {
     reqBody.visibility = visibility;
   }
@@ -289,7 +290,7 @@ export async function getIssueRemoteLinks(client: JiraClient, issueIdOrKey: stri
 export async function createIssueRemoteLink(
   client: JiraClient,
   issueIdOrKey: string,
-  link: unknown,
+  link: RemoteLink,
 ): Promise<RemoteLink> {
   return await post(client, `/rest/api/3/issue/${issueIdOrKey}/remotelink`, link);
 }
@@ -308,7 +309,7 @@ export async function updateIssueRemoteLink(
   client: JiraClient,
   issueIdOrKey: string,
   linkId: string,
-  link: unknown,
+  link: RemoteLink,
 ): Promise<RemoteLink> {
   return await put(client, `/rest/api/3/issue/${issueIdOrKey}/remotelink/${linkId}`, link);
 }
@@ -332,8 +333,21 @@ export async function notifyIssue(
 }
 
 // getIssueEditMeta returns the edit metadata for an issue.
-export async function getIssueEditMeta(client: JiraClient, issueIdOrKey: string): Promise<Record<string, unknown>> {
+export async function getIssueEditMeta(client: JiraClient, issueIdOrKey: string): Promise<IssueEditMeta> {
   return await get(client, `/rest/api/3/issue/${issueIdOrKey}/editmeta`);
+}
+
+export interface IssueEditMeta {
+  fields?: Record<string, IssueEditMetaField>;
+}
+
+export interface IssueEditMetaField {
+  required?: boolean;
+  schema?: { type?: string; system?: string; custom?: string; customId?: number };
+  name?: string;
+  fieldId?: string;
+  operations?: string[];
+  allowedValues?: JsonValue[];
 }
 
 // getCreateMeta returns the create metadata for issues.
@@ -354,7 +368,7 @@ export async function getCreateMeta(
 
 // getIssueProperties returns all property keys for an issue.
 export async function getIssueProperties(client: JiraClient, issueIdOrKey: string): Promise<EntityProperty[]> {
-  const wrapper = await get(client, `/rest/api/3/issue/${issueIdOrKey}/properties`);
+  const wrapper = await get<{ keys: EntityProperty[] }>(client, `/rest/api/3/issue/${issueIdOrKey}/properties`);
   return wrapper.keys;
 }
 
@@ -372,7 +386,7 @@ export async function setIssueProperty(
   client: JiraClient,
   issueIdOrKey: string,
   propertyKey: string,
-  value: unknown,
+  value: JsonBody,
 ): Promise<void> {
   return await put(client, `/rest/api/3/issue/${issueIdOrKey}/properties/${propertyKey}`, value);
 }

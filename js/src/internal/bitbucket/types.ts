@@ -565,6 +565,52 @@ export interface SearchResponse {
   values: SearchResult[];
 }
 
+// --- Pull request activity feed ---
+
+export interface PRActivityUser {
+  display_name: string;
+  uuid: string;
+  nickname: string;
+  type: string;
+  account_id: string;
+}
+
+export interface PRActivityApproval {
+  date: string;
+  user: PRActivityUser;
+}
+
+export interface PRActivityBranchRef {
+  branch: { name: string };
+  commit: { hash: string; type: string };
+  repository: { full_name: string; uuid: string };
+}
+
+export interface PRActivityUpdate {
+  date: string;
+  title: string;
+  description: string;
+  state: string; // OPEN | MERGED | DECLINED
+  reason: string;
+  author: PRActivityUser;
+  source: PRActivityBranchRef;
+  destination: PRActivityBranchRef;
+}
+
+export interface PRActivityPullRequestRef {
+  type: string;
+  id: number;
+  title: string;
+  links: { html: { href: string } };
+}
+
+export interface PRActivity {
+  approval?: PRActivityApproval;
+  update?: PRActivityUpdate;
+  comment?: PRComment;
+  pull_request?: PRActivityPullRequestRef;
+}
+
 // --- User ---
 
 export interface CurrentUser {

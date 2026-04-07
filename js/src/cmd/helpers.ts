@@ -4,8 +4,25 @@ import { createClient as createBBClient } from '../internal/bitbucket/client.js'
 import { createClient as createConfClient } from '../internal/api/client.js';
 import type { Profile } from '../internal/config/config.js';
 import type { ConfluenceClient } from '../internal/api/client.js';
+import type { JsonBody } from '../internal/types.js';
 
-// Use a minimal interface for the common flags
+/**
+ * Value type for arbitrary yargs argv entries. Yargs only ever produces
+ * primitives, arrays of primitives, or undefined for parsed options, so
+ * we model that explicitly instead of leaning on `any`/`unknown`.
+ */
+export type ArgvValue =
+  | string
+  | number
+  | boolean
+  | (string | number | boolean)[]
+  | undefined;
+
+// Use a minimal interface for the common flags. We intentionally omit a
+// string index signature so narrowly-typed handler argvs (e.g. JiraArgv,
+// BitbucketArgv) can be passed here without needing to include one
+// themselves. The per-command argv types from the CLI files carry the
+// additional option/positional fields that each handler needs.
 export interface BaseArgv {
   profile?: string;
   output?: string;
@@ -14,7 +31,6 @@ export interface BaseArgv {
   page?: number;
   pagelen?: number;
   all?: boolean;
-  [key: string]: unknown;
 }
 
 // Inferred return types from the client factory functions
@@ -211,7 +227,7 @@ export function isJSONOutput(argv: BaseArgv): boolean {
 /**
  * Pretty-prints v as indented JSON to stdout.
  */
-export function outputJSON(v: unknown): void {
+export function outputJSON(v: JsonBody): void {
   console.log(JSON.stringify(v, null, 2));
 }
 
@@ -219,7 +235,7 @@ export function outputJSON(v: unknown): void {
  * Outputs a structured result for mutation operations.
  * In text mode, prints the message. In JSON mode, outputs a structured envelope.
  */
-export function outputResult(argv: BaseArgv, action: string, key: string, message: string, data: unknown): void {
+export function outputResult(argv: BaseArgv, action: string, key: string, message: string, data: JsonBody): void {
   if (isJSONOutput(argv)) {
     outputJSON({ status: 'ok', action, key, message, data });
     return;
@@ -243,8 +259,8 @@ export function printPaginationHint(shown: number, total: number): void {
  */
 export function getBBPaginationOpts(argv: BaseArgv): { page: number; pageLen: number; all: boolean } {
   return {
-    page: (argv.page as number) || 0,
-    pageLen: (argv.pagelen as number) || 0,
-    all: (argv.all as boolean) || false,
+    page: argv.page || 0,
+    pageLen: argv.pagelen || 0,
+    all: argv.all || false,
   };
 }

@@ -1,5 +1,6 @@
 import { get, post, put, del, getRaw } from './client.js';
 import type { JiraClient } from './client.js';
+import type { JsonBody } from '../types.js';
 import type {
   CreatedIssue,
   EntityProperty,
@@ -186,7 +187,7 @@ export async function getProjectProperties(
   client: JiraClient,
   projectIdOrKey: string,
 ): Promise<EntityProperty[]> {
-  const result = await get(client, `/rest/api/3/project/${projectIdOrKey}/properties`);
+  const result = await get<{ keys: EntityProperty[] }>(client, `/rest/api/3/project/${projectIdOrKey}/properties`);
   return result.keys;
 }
 
@@ -197,7 +198,7 @@ export async function setProjectProperty(
   client: JiraClient,
   projectIdOrKey: string,
   key: string,
-  value: unknown,
+  value: JsonBody,
 ): Promise<void> {
   return await put(client, `/rest/api/3/project/${projectIdOrKey}/properties/${key}`, value);
 }

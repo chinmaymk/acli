@@ -21,6 +21,8 @@ import type {
   ScreenScheme,
   ScreenTab,
   Webhook,
+  WebhookRegistrationRequest,
+  WebhookRegistrationResponse,
   Workflow,
   WorkflowScheme,
 } from './types.js';
@@ -644,7 +646,7 @@ export async function deleteFieldConfigurationScheme(
  * Returns all permission schemes.
  */
 export async function getPermissionSchemes(client: JiraClient): Promise<PermissionScheme[]> {
-  const result = await get(client, '/rest/api/3/permissionscheme');
+  const result = await get<{ permissionSchemes: PermissionScheme[] }>(client, '/rest/api/3/permissionscheme');
   return result.permissionSchemes;
 }
 
@@ -737,7 +739,7 @@ export async function deleteNotificationScheme(client: JiraClient, id: number): 
  * Returns all issue security schemes.
  */
 export async function getIssueSecuritySchemes(client: JiraClient): Promise<IssueSecurityScheme[]> {
-  const result = await get(client, '/rest/api/3/issuesecurityschemes');
+  const result = await get<{ issueSecuritySchemes: IssueSecurityScheme[] }>(client, '/rest/api/3/issuesecurityschemes');
   return result.issueSecuritySchemes;
 }
 
@@ -832,8 +834,8 @@ export async function getWebhooks(
 /**
  * Registers webhooks.
  */
-export async function registerWebhooks(client: JiraClient, webhooks: Record<string, unknown>): Promise<Webhook[]> {
-  const result = await post(client, '/rest/api/3/webhook', webhooks);
+export async function registerWebhooks(client: JiraClient, webhooks: WebhookRegistrationRequest): Promise<Webhook[]> {
+  const result = await post<WebhookRegistrationResponse>(client, '/rest/api/3/webhook', webhooks);
   return result.webhookRegistrationResult;
 }
 

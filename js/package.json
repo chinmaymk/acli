@@ -6,11 +6,49 @@
   "bin": {
     "acli": "./dist/index.js"
   },
+  "main": "./dist/lib.js",
+  "types": "./dist/lib.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/lib.d.ts",
+      "import": "./dist/lib.js"
+    },
+    "./jira": {
+      "types": "./dist/jira.d.ts",
+      "import": "./dist/jira.js"
+    },
+    "./bitbucket": {
+      "types": "./dist/bitbucket.d.ts",
+      "import": "./dist/bitbucket.js"
+    },
+    "./confluence": {
+      "types": "./dist/confluence.d.ts",
+      "import": "./dist/confluence.js"
+    },
+    "./config": {
+      "types": "./dist/internal/config/config.d.ts",
+      "import": "./dist/internal/config/config.js"
+    },
+    "./adf": {
+      "types": "./dist/internal/adf/render.d.ts",
+      "import": "./dist/internal/adf/render.js"
+    },
+    "./types": {
+      "types": "./dist/internal/types.d.ts",
+      "import": "./dist/internal/types.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
-    "test": "node --test dist/**/*.test.js"
+    "test": "node --test dist/**/*.test.js",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "yargs": "^17.7.2"

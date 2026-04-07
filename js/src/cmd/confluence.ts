@@ -1,7 +1,8 @@
 import { getConfluenceClient } from './helpers.js';
 import { confluenceV2 } from '../internal/api/client.js';
 import type { ConfluenceClient } from '../internal/api/client.js';
-import type { Argv } from 'yargs';
+import type { Argv, ArgumentsCamelCase } from 'yargs';
+import type { JsonBody, JsonValue } from '../internal/types.js';
 
 // ---------------------------------------------------------------------------
 // Pagination helpers
@@ -9,16 +10,148 @@ import type { Argv } from 'yargs';
 
 const DEFAULT_LIMIT = 50;
 
-interface ConfluencePaginatedResponse {
-  results?: unknown[];
+/**
+ * Generic paginated envelope returned by the Confluence v2 API. The result
+ * rows are largely opaque to the CLI (we only ever pretty-print them as JSON),
+ * so callers default `T` to `JsonValue`.
+ */
+interface ConfluencePaginatedResponse<T = JsonValue> {
+  results?: T[];
   _links?: { next?: string };
-  [key: string]: unknown;
+}
+
+/**
+ * Union of all argv fields referenced by any Confluence handler in this
+ * file. Every property is optional because each handler only uses a small
+ * subset — yargs populates the rest as `undefined`. Keeping a single shared
+ * interface (rather than one per handler) avoids boilerplate while still
+ * eliminating `any`/`unknown` from handler signatures.
+ */
+interface ConfluenceArgv {
+  // Baseline fields every yargs-parsed argv carries. Including these makes
+  // ConfluenceArgv compatible with `ArgumentsCamelCase<U>` so yargs'
+  // `.command(cmd, desc, builder, handler)` overload matches cleanly.
+  _: (string | number)[];
+  $0: string;
+
+  // profile/global
+  profile?: string;
+
+  // pagination / sort / format / status
+  limit?: number;
+  cursor?: string;
+  all?: boolean;
+  sort?: string;
+  'body-format'?: string;
+  status?: string | string[];
+
+  // generic ids / positionals
+  id?: string | string[];
+  ids?: string[];
+  keys?: string[];
+  key?: string;
+  type?: string;
+  title?: string;
+  name?: string;
+  alias?: string;
+  description?: string;
+  private?: boolean;
+  'template-key'?: string;
+  'homepage-id'?: string;
+  labels?: string[];
+  'favorited-by'?: string;
+  'not-favorited-by'?: string;
+  'description-format'?: string;
+  'include-icon'?: boolean;
+  'include-operations'?: boolean;
+  'include-properties'?: boolean;
+  'include-permissions'?: boolean;
+  'include-role-assignments'?: boolean;
+  'include-labels'?: boolean;
+  'include-collaborators'?: boolean;
+  'include-direct-children'?: boolean;
+  'include-likes'?: boolean;
+  'include-versions'?: boolean;
+  'include-version'?: boolean;
+  'include-favorited-by-current-user-status'?: boolean;
+  'include-webresources'?: boolean;
+
+  // resource-specific ids
+  'space-id'?: string | string[];
+  'page-id'?: string | string[];
+  'parent-id'?: string;
+  'blogpost-id'?: string | string[];
+  'attachment-id'?: string;
+  'custom-content-id'?: string;
+  'custom-content-id-parent'?: string;
+  'comment-id'?: string;
+  'parent-comment-id'?: string;
+  'whiteboard-id'?: string;
+  'database-id'?: string;
+  'folder-id'?: string;
+  'smart-link-id'?: string;
+  'embed-id'?: string;
+  'property-id'?: string;
+  'property-key'?: string;
+  'role-id'?: string;
+  'role-type'?: string;
+  'principal-id'?: string;
+  'principal-type'?: string;
+  'label-id'?: string[];
+  'task-id'?: string | string[];
+  'task-status'?: string;
+  'task-id-field'?: string;
+
+  // create/update
+  subtype?: string;
+  embedded?: boolean;
+  'root-level'?: boolean;
+  body?: string;
+  'version-number'?: number | string;
+  'version-message'?: string;
+  'get-draft'?: boolean;
+  version?: number;
+  draft?: boolean;
+  purge?: boolean;
+  depth?: number | string;
+  prefix?: string | string[];
+  'media-type'?: string;
+  filename?: string;
+  'resolution-status'?: string[];
+  resolved?: boolean;
+  'inline-comment-properties'?: string;
+  'created-by'?: string[];
+  'assigned-to'?: string;
+  'completed-by'?: string[];
+  'include-blank-tasks'?: boolean;
+  'created-at-from'?: string;
+  'created-at-to'?: string;
+  'due-at-from'?: string;
+  'due-at-to'?: string;
+  'completed-at-from'?: string;
+  'completed-at-to'?: string;
+  'due-at'?: string;
+  locale?: string;
+  'embed-url'?: string;
+  value?: string;
+  duration?: number;
+  'classification-id'?: string;
+
+  // positional arrays
+  'content-ids'?: string[];
+  'account-ids'?: string[];
+  emails?: string[];
+
+  // index signature for dynamic `argv[flag]` / `argv[idParam]` access used
+  // in a few include-flag loops and property resource loops. Only the field
+  // types that actually appear at those dynamic sites are allowed.
+  [extra: string]: string | number | boolean | string[] | (string | number)[] | undefined;
 }
 
 /**
  * Build a query object from common pagination/sort/format flags in argv.
  */
-function getPaginationQuery(argv: any): Record<string, string | string[]> {
+function getPaginationQuery(argv: ConfluenceArgv): Record<string, string | string[]> {
   const q: Record<string, string | string[]> = {};
   if (argv.limit != null && argv.limit > 0) q.limit = String(argv.limit);
   if (argv.cursor && !argv.all) q.cursor = argv.cursor;
@@ -71,47 +204,47 @@ function buildQueryString(query: Record<string, string | string[]> | null): stri
 /**
  * Fetch a single page of results from the Confluence v2 API.
  */
-async function confGet<T = unknown>(client: ConfluenceClient, path: string, query: Record<string, string | string[]> | null): Promise<T> {
+async function confGet<T = JsonValue>(client: ConfluenceClient, path: string, query: Record<string, string | string[]> | null): Promise<T> {
   return confluenceV2<T>(client, 'GET', path, serializeQuery(query));
 }
 
 /**
  * POST to the Confluence v2 API.
  */
-async function confPost<T = unknown>(client: ConfluenceClient, path: string, query: Record<string, string | string[]> | null, body: unknown): Promise<T> {
+async function confPost<T = JsonValue>(client: ConfluenceClient, path: string, query: Record<string, string | string[]> | null, body: JsonBody): Promise<T> {
   return confluenceV2<T>(client, 'POST', path, serializeQuery(query), body);
 }
 
 /**
  * PUT to the Confluence v2 API.
  */
-async function confPut<T = unknown>(client: ConfluenceClient, path: string, query: Record<string, string | string[]> | null, body: unknown): Promise<T> {
+async function confPut<T = JsonValue>(client: ConfluenceClient, path: string, query: Record<string, string | string[]> | null, body: JsonBody): Promise<T> {
   return confluenceV2<T>(client, 'PUT', path, serializeQuery(query), body);
 }
 
 /**
  * DELETE from the Confluence v2 API.
  */
-async function confDelete<T = unknown>(client: ConfluenceClient, path: string, query: Record<string, string | string[]> | null): Promise<T> {
+async function confDelete<T = JsonValue>(client: ConfluenceClient, path: string, query: Record<string, string | string[]> | null): Promise<T> {
   return confluenceV2<T>(client, 'DELETE', path, serializeQuery(query));
 }
 
 /**
  * Fetch paginated results, following cursor links when all=true.
  */
-async function confGetPaginated(client: ConfluenceClient, path: string, query: Record<string, string | string[]>, all: boolean): Promise<unknown> {
+async function confGetPaginated(client: ConfluenceClient, path: string, query: Record<string, string | string[]>, all: boolean | undefined): Promise<JsonValue> {
   if (!all) {
-    return confGet(client, path, query);
+    return confGet<JsonValue>(client, path, query);
   }
 
-  const allResults: unknown[] = [];
+  const allResults: JsonValue[] = [];
   let currentPath = path;
   let currentQuery: Record<string, string | string[]> = query;
 
   for (;;) {
     const data = await confluenceV2<ConfluencePaginatedResponse>(client, 'GET', currentPath, serializeQuery(currentQuery));
     if (!data || !data.results) {
-      return data;
+      return (data ?? null) as JsonValue;
     }
     allResults.push(...data.results);
     if (!data._links || !data._links.next) break;
@@ -139,16 +272,16 @@ async function confGetPaginated(client: ConfluenceClient, path: string, query: R
 /**
  * Pretty-print a JSON value to stdout.
  */
-function printJSON(data: unknown): void {
+function printJSON(data: JsonValue): void {
   console.log(JSON.stringify(data, null, 2));
 }
 
 /**
  * Parse a string as JSON; if it fails treat it as a plain string.
  */
-function parseJSONOrString(s: string): unknown {
+function parseJSONOrString(s: string): JsonValue {
   try {
-    return JSON.parse(s);
+    return JSON.parse(s) as JsonValue;
   } catch {
     return s;
   }
@@ -202,10 +335,10 @@ function addTreeSubResources(yargs: Argv, pathPrefix: string, resourceName: stri
         y
           .positional('id', { type: 'string' })
           .option('limit', { type: 'number', default: DEFAULT_LIMIT, describe: 'Maximum number of results' }),
-      async (argv: any) => {
+      async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
         const client = getConfluenceClient(argv);
         const q: Record<string, string | string[]> = {};
-        if (argv.limit > 0) q.limit = String(argv.limit);
+        if (argv.limit != null && argv.limit > 0) q.limit = String(argv.limit);
         const data = await confGet(client, `${pathPrefix}/${argv.id}/ancestors`, q);
         printJSON(data);
       }
@@ -218,10 +351,10 @@ function addTreeSubResources(yargs: Argv, pathPrefix: string, resourceName: stri
         y = addSortOption(y);
         return y.option('depth', { type: 'number', default: 0, describe: 'Maximum depth of descendants' });
       },
-      async (argv: any) => {
+      async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
         const client = getConfluenceClient(argv);
         const q = getPaginationQuery(argv);
-        if (argv.depth > 0) q.depth = String(argv.depth);
+        if (argv.depth != null && Number(argv.depth) > 0) q.depth = String(argv.depth);
         const data = await confGetPaginated(client, `${pathPrefix}/${argv.id}/descendants`, q, argv.all);
         printJSON(data);
       }
@@ -230,7 +363,7 @@ function addTreeSubResources(yargs: Argv, pathPrefix: string, resourceName: stri
       'direct-children <id>',
       `Get direct children of a ${resourceName}`,
       (y: Argv) => addSortOption(addPaginationOptions(y.positional('id', { type: 'string' }) as Argv)),
-      async (argv: any) => {
+      async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
         const client = getConfluenceClient(argv);
         const q = getPaginationQuery(argv);
         const data = await confGetPaginated(client, `${pathPrefix}/${argv.id}/direct-children`, q, argv.all);
@@ -241,7 +374,7 @@ function addTreeSubResources(yargs: Argv, pathPrefix: string, resourceName: stri
       'operations <id>',
       `Get permitted operations for ${resourceName}`,
       (y: Argv) => y.positional('id', { type: 'string' }),
-      async (argv: any) => {
+      async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
         const client = getConfluenceClient(argv);
         const data = await confGet(client, `${pathPrefix}/${argv.id}/operations`, null);
         printJSON(data);
@@ -255,7 +388,7 @@ function addTreeSubResources(yargs: Argv, pathPrefix: string, resourceName: stri
         y = addSortOption(y);
         return y.option('key', { type: 'string', describe: 'Filter by property key' });
       },
-      async (argv: any) => {
+      async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
         const client = getConfluenceClient(argv);
         const q = getPaginationQuery(argv);
         if (argv.key) q.key = argv.key;
@@ -296,7 +429,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                     .option('description-format', { type: 'string', describe: 'Description format (plain, view)' })
                     .option('include-icon', { type: 'boolean', default: false, describe: 'Include space icon' });
                 },
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const q = getPaginationQuery(argv);
                   if (argv.ids && argv.ids.length > 0) q.ids = argv.ids;
@@ -324,7 +457,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                     .option('include-permissions', { type: 'boolean', default: false, describe: 'Include permissions' })
                     .option('include-role-assignments', { type: 'boolean', default: false, describe: 'Include role assignments' })
                     .option('include-labels', { type: 'boolean', default: false, describe: 'Include labels' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const q: Record<string, string | string[]> = {};
                   if (argv['description-format']) q['description-format'] = argv['description-format'];
@@ -349,9 +482,9 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                     .option('description', { type: 'string', describe: 'Space description' })
                     .option('private', { type: 'boolean', default: false, describe: 'Create as private space' })
                     .option('template-key', { type: 'string', describe: 'Template key' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
-                  const body: Record<string, any> = { name: argv.name };
+                  const body: Record<string, JsonBody> = { name: argv.name! };
                   if (argv.key) body.key = argv.key;
                   if (argv.alias) body.alias = argv.alias;
                   if (argv.description) body.description = { representation: 'plain', value: argv.description };
@@ -361,35 +494,9 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                   printJSON(data);
                 }
               )
-              .command(
-                'update <space-id>',
-                'Update a space',
-                (y: Argv) =>
-                  y
-                    .positional('space-id', { type: 'string' })
-                    .option('name', { type: 'string', describe: 'Space name' })
-                    .option('description', { type: 'string', describe: 'Space description' })
-                    .option('homepage-id', { type: 'string', describe: 'Homepage page ID' }),
-                async (argv: any) => {
-                  const client = getConfluenceClient(argv);
-                  const body: Record<string, any> = {};
-                  if (argv.name) body.name = argv.name;
-                  if (argv.description) body.description = { representation: 'plain', value: argv.description };
-                  if (argv['homepage-id']) body.homepageId = argv['homepage-id'];
-                  const data = await confPut(client, `/spaces/${argv['space-id']}`, null, body);
-                  printJSON(data);
-                }
-              )
-              .command(
-                'delete <space-id>',
-                'Delete a space',
-                (y: Argv) => y.positional('space-id', { type: 'string' }),
-                async (argv: any) => {
-                  const client = getConfluenceClient(argv);
-                  await confDelete(client, `/spaces/${argv['space-id']}`, null);
-                  console.log('Space deleted successfully.');
-                }
-              )
+              // Note: the Confluence v2 REST API does not expose update/delete
+              // for spaces (those operations only exist in the legacy v1 API).
+              // The Go port intentionally omits them, and so do we.
               .command(
                 'pages <space-id>',
                 'List pages in a space',
@@ -402,10 +509,10 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                     .option('depth', { type: 'string', describe: 'Filter by depth (root, all)' })
                     .option('title', { type: 'string', describe: 'Filter by title' });
                 },
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const q = getPaginationQuery(argv);
-                  if (argv.depth) q.depth = argv.depth;
+                  if (argv.depth) q.depth = String(argv.depth);
                   if (argv.title) q.title = argv.title;
                   const data = await confGetPaginated(client, `/spaces/${argv['space-id']}/pages`, q, argv.all);
                   printJSON(data);
@@ -421,10 +528,10 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                   y = addBodyFormatOption(y);
                   return y.option('title', { type: 'string', describe: 'Filter by title' });
                 },
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const q = getPaginationQuery(argv);
-                  q['space-id'] = argv['space-id'];
+                  q['space-id'] = argv['space-id']!;
                   if (argv.title) q.title = argv.title;
                   const data = await confGetPaginated(client, '/blogposts', q, argv.all);
                   printJSON(data);
@@ -434,7 +541,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                 'labels <space-id>',
                 'Get labels for a space',
                 (y: Argv) => addPaginationOptions(y.positional('space-id', { type: 'string' }) as Argv),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const q = getPaginationQuery(argv);
                   const data = await confGetPaginated(client, `/spaces/${argv['space-id']}/labels`, q, argv.all);
@@ -447,7 +554,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                 (y: Argv) =>
                   addPaginationOptions(y.positional('space-id', { type: 'string' }) as Argv)
                     .option('prefix', { type: 'string', describe: 'Filter by prefix' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const q = getPaginationQuery(argv);
                   if (argv.prefix) q.prefix = argv.prefix;
@@ -464,7 +571,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                   y = addBodyFormatOption(y);
                   return y.option('type', { type: 'string', describe: 'Custom content type' });
                 },
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const q = getPaginationQuery(argv);
                   if (argv.type) q.type = argv.type;
@@ -476,7 +583,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                 'operations <space-id>',
                 'Get permitted operations for space',
                 (y: Argv) => y.positional('space-id', { type: 'string' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const data = await confGet(client, `/spaces/${argv['space-id']}/operations`, null);
                   printJSON(data);
@@ -486,11 +593,11 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                 'permissions <space-id>',
                 'Get space permissions assignments',
                 (y: Argv) => addPaginationOptions(y.positional('space-id', { type: 'string' }) as Argv),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const q: Record<string, string | string[]> = {};
                   if (argv.cursor) q.cursor = argv.cursor;
-                  if (argv.limit > 0) q.limit = String(argv.limit);
+                  if (argv.limit != null && argv.limit > 0) q.limit = String(argv.limit);
                   const data = await confGetPaginated(client, `/spaces/${argv['space-id']}/permissions`, q, argv.all);
                   printJSON(data);
                 }
@@ -504,11 +611,11 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                     .option('role-type', { type: 'string', describe: 'Filter by role type' })
                     .option('principal-id', { type: 'string', describe: 'Filter by principal ID' })
                     .option('principal-type', { type: 'string', describe: 'Filter by principal type' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const q: Record<string, string | string[]> = {};
                   if (argv.cursor) q.cursor = argv.cursor;
-                  if (argv.limit > 0) q.limit = String(argv.limit);
+                  if (argv.limit != null && argv.limit > 0) q.limit = String(argv.limit);
                   if (argv['role-id']) q['role-id'] = argv['role-id'];
                   if (argv['role-type']) q['role-type'] = argv['role-type'];
                   if (argv['principal-id']) q['principal-id'] = argv['principal-id'];
@@ -524,9 +631,9 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                   y
                     .positional('space-id', { type: 'string' })
                     .option('body', { type: 'string', demandOption: true, describe: 'JSON body for role assignments' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
-                  const body = JSON.parse(argv.body);
+                  const body = JSON.parse(argv.body!) as JsonBody;
                   const data = await confPost(client, `/spaces/${argv['space-id']}/role-assignments`, null, body);
                   printJSON(data);
                 }
@@ -558,7 +665,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                     .option('title', { type: 'string', describe: 'Filter by title' })
                     .option('subtype', { type: 'string', describe: 'Filter by subtype' });
                 },
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const q = getPaginationQuery(argv);
                   if (argv.id && argv.id.length > 0) q.id = argv.id;
@@ -589,12 +696,12 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                     .option('include-collaborators', { type: 'boolean', default: false, describe: 'Include collaborators' })
                     .option('include-direct-children', { type: 'boolean', default: false, describe: 'Include direct children' });
                 },
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const q: Record<string, string | string[]> = {};
                   if (argv['body-format']) q['body-format'] = argv['body-format'];
                   if (argv['get-draft']) q['get-draft'] = 'true';
-                  if (argv.version > 0) q.version = String(argv.version);
+                  if (argv.version != null && argv.version > 0) q.version = String(argv.version);
                   for (const flag of [
                     'include-labels', 'include-properties', 'include-operations',
                     'include-likes', 'include-versions', 'include-version',
@@ -622,18 +729,18 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                     .option('embedded', { type: 'boolean', default: false, describe: 'Create as embedded content' })
                     .option('private', { type: 'boolean', default: false, describe: 'Create as private page' })
                     .option('root-level', { type: 'boolean', default: false, describe: 'Create at root level of space' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const q: Record<string, string | string[]> = {};
                   if (argv.embedded) q.embedded = 'true';
                   if (argv.private) q.private = 'true';
                   if (argv['root-level']) q['root-level'] = 'true';
-                  const body: Record<string, any> = { spaceId: argv['space-id'] };
+                  const body: Record<string, JsonBody> = { spaceId: argv['space-id']! };
                   if (argv.title) body.title = argv.title;
                   if (argv.status) body.status = argv.status;
                   if (argv['parent-id']) body.parentId = argv['parent-id'];
                   if (argv.subtype) body.subtype = argv.subtype;
-                  if (argv.body) body.body = { representation: argv['body-format'], value: argv.body };
+                  if (argv.body) body.body = { representation: argv['body-format']!, value: argv.body };
                   const data = await confPost(client, '/pages', q, body);
                   printJSON(data);
                 }
@@ -652,15 +759,15 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                     .option('version-message', { type: 'string', describe: 'Version message' })
                     .option('space-id', { type: 'string', describe: 'Space ID' })
                     .option('parent-id', { type: 'string', describe: 'Parent page ID' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
-                  const body: Record<string, any> = {
-                    id: argv['page-id'],
-                    status: argv.status,
-                    title: argv.title,
-                    version: { number: argv['version-number'], message: argv['version-message'] || '' },
+                  const body: Record<string, JsonBody> = {
+                    id: argv['page-id']!,
+                    status: argv.status!,
+                    title: argv.title!,
+                    version: { number: argv['version-number']!, message: argv['version-message'] || '' },
                   };
-                  if (argv.body) body.body = { representation: argv['body-format'], value: argv.body };
+                  if (argv.body) body.body = { representation: argv['body-format']!, value: argv.body };
                   if (argv['space-id']) body.spaceId = argv['space-id'];
                   if (argv['parent-id']) body.parentId = argv['parent-id'];
                   const data = await confPut(client, `/pages/${argv['page-id']}`, null, body);
@@ -675,7 +782,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                     .positional('page-id', { type: 'string' })
                     .option('title', { type: 'string', demandOption: true, describe: 'New title' })
                     .option('status', { type: 'string', default: 'current', describe: 'Page status' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const body = { title: argv.title, status: argv.status };
                   const data = await confPut(client, `/pages/${argv['page-id']}/title`, null, body);
@@ -690,7 +797,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                     .positional('page-id', { type: 'string' })
                     .option('purge', { type: 'boolean', default: false, describe: 'Purge the page' })
                     .option('draft', { type: 'boolean', default: false, describe: 'Delete a draft page' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const q: Record<string, string | string[]> = {};
                   if (argv.purge) q.purge = 'true';
@@ -703,7 +810,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                 'children <page-id>',
                 'Get child pages',
                 (y: Argv) => addSortOption(addPaginationOptions(y.positional('page-id', { type: 'string' }) as Argv)),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const q = getPaginationQuery(argv);
                   const data = await confGetPaginated(client, `/pages/${argv['page-id']}/children`, q, argv.all);
@@ -714,7 +821,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                 'direct-children <page-id>',
                 'Get direct children of a page',
                 (y: Argv) => addSortOption(addPaginationOptions(y.positional('page-id', { type: 'string' }) as Argv)),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const q = getPaginationQuery(argv);
                   const data = await confGetPaginated(client, `/pages/${argv['page-id']}/direct-children`, q, argv.all);
@@ -728,10 +835,10 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                   y
                     .positional('page-id', { type: 'string' })
                     .option('limit', { type: 'number', default: DEFAULT_LIMIT }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const q: Record<string, string | string[]> = {};
-                  if (argv.limit > 0) q.limit = String(argv.limit);
+                  if (argv.limit != null && argv.limit > 0) q.limit = String(argv.limit);
                   const data = await confGet(client, `/pages/${argv['page-id']}/ancestors`, q);
                   printJSON(data);
                 }
@@ -742,10 +849,10 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                 (y: Argv) =>
                   addPaginationOptions(y.positional('page-id', { type: 'string' }) as Argv)
                     .option('depth', { type: 'number', default: 0, describe: 'Maximum depth of descendants' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const q = getPaginationQuery(argv);
-                  if (argv.depth > 0) q.depth = String(argv.depth);
+                  if (argv.depth != null && Number(argv.depth) > 0) q.depth = String(argv.depth);
                   const data = await confGetPaginated(client, `/pages/${argv['page-id']}/descendants`, q, argv.all);
                   printJSON(data);
                 }
@@ -758,7 +865,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                   y = addSortOption(y);
                   return addBodyFormatOption(y);
                 },
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const q = getPaginationQuery(argv);
                   const data = await confGetPaginated(client, `/pages/${argv['page-id']}/versions`, q, argv.all);
@@ -772,7 +879,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                   y
                     .positional('page-id', { type: 'string' })
                     .positional('version-number', { type: 'string' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const data = await confGet(client, `/pages/${argv['page-id']}/versions/${argv['version-number']}`, null);
                   printJSON(data);
@@ -786,7 +893,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                   y = addSortOption(y);
                   return y.option('prefix', { type: 'string', describe: 'Filter by prefix' });
                 },
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const q = getPaginationQuery(argv);
                   if (argv.prefix) q.prefix = argv.prefix;
@@ -805,7 +912,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                     .option('media-type', { type: 'string', describe: 'Filter by media type' })
                     .option('filename', { type: 'string', describe: 'Filter by filename' });
                 },
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const q = getPaginationQuery(argv);
                   if (argv['media-type']) q.mediaType = argv['media-type'];
@@ -823,7 +930,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                   y = addStatusOption(y);
                   return addBodyFormatOption(y);
                 },
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const q = getPaginationQuery(argv);
                   const data = await confGetPaginated(client, `/pages/${argv['page-id']}/footer-comments`, q, argv.all);
@@ -840,7 +947,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                   y = addBodyFormatOption(y);
                   return y.option('resolution-status', { type: 'array', describe: 'Filter by resolution status' });
                 },
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const q = getPaginationQuery(argv);
                   if (argv['resolution-status'] && argv['resolution-status'].length > 0) {
@@ -859,7 +966,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                   y = addBodyFormatOption(y);
                   return y.option('type', { type: 'string', describe: 'Custom content type' });
                 },
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const q = getPaginationQuery(argv);
                   if (argv.type) q.type = argv.type;
@@ -871,7 +978,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                 'operations <page-id>',
                 'Get permitted operations for page',
                 (y: Argv) => y.positional('page-id', { type: 'string' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const data = await confGet(client, `/pages/${argv['page-id']}/operations`, null);
                   printJSON(data);
@@ -881,7 +988,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                 'likes-count <page-id>',
                 'Get like count for page',
                 (y: Argv) => y.positional('page-id', { type: 'string' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const data = await confGet(client, `/pages/${argv['page-id']}/likes/count`, null);
                   printJSON(data);
@@ -891,7 +998,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                 'likes-users <page-id>',
                 'Get account IDs of likes for page',
                 (y: Argv) => addPaginationOptions(y.positional('page-id', { type: 'string' }) as Argv),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const q = getPaginationQuery(argv);
                   const data = await confGetPaginated(client, `/pages/${argv['page-id']}/likes/users`, q, argv.all);
@@ -905,9 +1012,9 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                   y
                     .positional('page-id', { type: 'string' })
                     .option('body', { type: 'string', demandOption: true, describe: 'JSON redaction request body' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
-                  const body = JSON.parse(argv.body);
+                  const body = JSON.parse(argv.body!) as JsonBody;
                   const data = await confPost(client, `/pages/${argv['page-id']}/redact`, null, body);
                   printJSON(data);
                 }
@@ -938,7 +1045,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                     .option('space-id', { type: 'array', describe: 'Filter by space IDs' })
                     .option('title', { type: 'string', describe: 'Filter by title' });
                 },
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const q = getPaginationQuery(argv);
                   if (argv.id && argv.id.length > 0) q.id = argv.id;
@@ -967,12 +1074,12 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                     .option('include-webresources', { type: 'boolean', default: false, describe: 'Include web resources' })
                     .option('include-collaborators', { type: 'boolean', default: false, describe: 'Include collaborators' });
                 },
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const q: Record<string, string | string[]> = {};
                   if (argv['body-format']) q['body-format'] = argv['body-format'];
                   if (argv['get-draft']) q['get-draft'] = 'true';
-                  if (argv.version > 0) q.version = String(argv.version);
+                  if (argv.version != null && argv.version > 0) q.version = String(argv.version);
                   for (const flag of [
                     'include-labels', 'include-properties', 'include-operations',
                     'include-likes', 'include-versions', 'include-version',
@@ -996,14 +1103,14 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                     .option('body', { type: 'string', describe: 'Blog post body content' })
                     .option('body-format', { type: 'string', default: 'storage', describe: 'Body format' })
                     .option('private', { type: 'boolean', default: false, describe: 'Create as private' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const q: Record<string, string | string[]> = {};
                   if (argv.private) q.private = 'true';
-                  const body: Record<string, any> = { spaceId: argv['space-id'] };
+                  const body: Record<string, JsonBody> = { spaceId: argv['space-id']! };
                   if (argv.title) body.title = argv.title;
                   if (argv.status) body.status = argv.status;
-                  if (argv.body) body.body = { representation: argv['body-format'], value: argv.body };
+                  if (argv.body) body.body = { representation: argv['body-format']!, value: argv.body };
                   const data = await confPost(client, '/blogposts', q, body);
                   printJSON(data);
                 }
@@ -1021,15 +1128,15 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                     .option('version-number', { type: 'number', demandOption: true, describe: 'Version number' })
                     .option('version-message', { type: 'string', describe: 'Version message' })
                     .option('space-id', { type: 'string', describe: 'Space ID' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
-                  const body: Record<string, any> = {
-                    id: argv['blogpost-id'],
-                    status: argv.status,
-                    title: argv.title,
-                    version: { number: argv['version-number'], message: argv['version-message'] || '' },
+                  const body: Record<string, JsonBody> = {
+                    id: argv['blogpost-id']!,
+                    status: argv.status!,
+                    title: argv.title!,
+                    version: { number: argv['version-number']!, message: argv['version-message'] || '' },
                   };
-                  if (argv.body) body.body = { representation: argv['body-format'], value: argv.body };
+                  if (argv.body) body.body = { representation: argv['body-format']!, value: argv.body };
                   if (argv['space-id']) body.spaceId = argv['space-id'];
                   const data = await confPut(client, `/blogposts/${argv['blogpost-id']}`, null, body);
                   printJSON(data);
@@ -1043,7 +1150,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                     .positional('blogpost-id', { type: 'string' })
                     .option('purge', { type: 'boolean', default: false, describe: 'Purge the blog post' })
                     .option('draft', { type: 'boolean', default: false, describe: 'Delete a draft blog post' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const q: Record<string, string | string[]> = {};
                   if (argv.purge) q.purge = 'true';
@@ -1063,7 +1170,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                     .option('media-type', { type: 'string', describe: 'Filter by media type' })
                     .option('filename', { type: 'string', describe: 'Filter by filename' });
                 },
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const q = getPaginationQuery(argv);
                   if (argv['media-type']) q.mediaType = argv['media-type'];
@@ -1080,7 +1187,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                   y = addSortOption(y);
                   return y.option('prefix', { type: 'string', describe: 'Filter by prefix' });
                 },
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const q = getPaginationQuery(argv);
                   if (argv.prefix) q.prefix = argv.prefix;
@@ -1097,7 +1204,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                   y = addStatusOption(y);
                   return addBodyFormatOption(y);
                 },
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const q = getPaginationQuery(argv);
                   const data = await confGetPaginated(client, `/blogposts/${argv['blogpost-id']}/footer-comments`, q, argv.all);
@@ -1114,7 +1221,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                   y = addBodyFormatOption(y);
                   return y.option('resolution-status', { type: 'array', describe: 'Filter by resolution status' });
                 },
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const q = getPaginationQuery(argv);
                   if (argv['resolution-status'] && argv['resolution-status'].length > 0) {
@@ -1133,7 +1240,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                   y = addBodyFormatOption(y);
                   return y.option('type', { type: 'string', describe: 'Custom content type' });
                 },
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const q = getPaginationQuery(argv);
                   if (argv.type) q.type = argv.type;
@@ -1145,7 +1252,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                 'operations <blogpost-id>',
                 'Get permitted operations for blog post',
                 (y: Argv) => y.positional('blogpost-id', { type: 'string' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const data = await confGet(client, `/blogposts/${argv['blogpost-id']}/operations`, null);
                   printJSON(data);
@@ -1159,7 +1266,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                   y = addSortOption(y);
                   return addBodyFormatOption(y);
                 },
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const q = getPaginationQuery(argv);
                   const data = await confGetPaginated(client, `/blogposts/${argv['blogpost-id']}/versions`, q, argv.all);
@@ -1173,7 +1280,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                   y
                     .positional('blogpost-id', { type: 'string' })
                     .positional('version-number', { type: 'string' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const data = await confGet(client, `/blogposts/${argv['blogpost-id']}/versions/${argv['version-number']}`, null);
                   printJSON(data);
@@ -1183,7 +1290,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                 'likes-count <blogpost-id>',
                 'Get like count for blog post',
                 (y: Argv) => y.positional('blogpost-id', { type: 'string' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const data = await confGet(client, `/blogposts/${argv['blogpost-id']}/likes/count`, null);
                   printJSON(data);
@@ -1193,7 +1300,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                 'likes-users <blogpost-id>',
                 'Get account IDs of likes for blog post',
                 (y: Argv) => addPaginationOptions(y.positional('blogpost-id', { type: 'string' }) as Argv),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const q = getPaginationQuery(argv);
                   const data = await confGetPaginated(client, `/blogposts/${argv['blogpost-id']}/likes/users`, q, argv.all);
@@ -1207,9 +1314,9 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                   y
                     .positional('blogpost-id', { type: 'string' })
                     .option('body', { type: 'string', demandOption: true, describe: 'JSON redaction request body' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
-                  const body = JSON.parse(argv.body);
+                  const body = JSON.parse(argv.body!) as JsonBody;
                   const data = await confPost(client, `/blogposts/${argv['blogpost-id']}/redact`, null, body);
                   printJSON(data);
                 }
@@ -1240,7 +1347,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                         y = addSortOption(y);
                         return addBodyFormatOption(y);
                       },
-                      async (argv: any) => {
+                      async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                         const client = getConfluenceClient(argv);
                         const q = getPaginationQuery(argv);
                         const data = await confGetPaginated(client, '/footer-comments', q, argv.all);
@@ -1260,11 +1367,11 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                           .option('include-versions', { type: 'boolean', default: false })
                           .option('include-version', { type: 'boolean', default: false });
                       },
-                      async (argv: any) => {
+                      async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                         const client = getConfluenceClient(argv);
                         const q: Record<string, string | string[]> = {};
                         if (argv['body-format']) q['body-format'] = argv['body-format'];
-                        if (argv.version > 0) q.version = String(argv.version);
+                        if (argv.version != null && argv.version > 0) q.version = String(argv.version);
                         for (const flag of ['include-properties', 'include-operations', 'include-likes', 'include-versions', 'include-version']) {
                           if (argv[flag]) q[flag] = 'true';
                         }
@@ -1284,9 +1391,9 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                           .option('parent-comment-id', { type: 'string', describe: 'Parent comment ID (for replies)' })
                           .option('body', { type: 'string', describe: 'Comment body content' })
                           .option('body-format', { type: 'string', default: 'storage', describe: 'Body format' }),
-                      async (argv: any) => {
+                      async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                         const client = getConfluenceClient(argv);
-                        const body: Record<string, any> = {};
+                        const body: Record<string, JsonBody> = {};
                         if (argv['page-id']) body.pageId = argv['page-id'];
                         if (argv['blogpost-id']) body.blogPostId = argv['blogpost-id'];
                         if (argv['attachment-id']) body.attachmentId = argv['attachment-id'];
@@ -1307,10 +1414,10 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                           .option('version-message', { type: 'string', describe: 'Version message' })
                           .option('body', { type: 'string', describe: 'Comment body content' })
                           .option('body-format', { type: 'string', default: 'storage', describe: 'Body format' }),
-                      async (argv: any) => {
+                      async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                         const client = getConfluenceClient(argv);
-                        const body: Record<string, any> = {
-                          version: { number: argv['version-number'], message: argv['version-message'] || '' },
+                        const body: Record<string, JsonBody> = {
+                          version: { number: argv['version-number']!, message: argv['version-message'] || '' },
                         };
                         if (argv.body) body.body = { representation: argv['body-format'], value: argv.body };
                         const data = await confPut(client, `/footer-comments/${argv['comment-id']}`, null, body);
@@ -1321,7 +1428,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                       'delete <comment-id>',
                       'Delete a footer comment',
                       (y: Argv) => y.positional('comment-id', { type: 'string' }),
-                      async (argv: any) => {
+                      async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                         const client = getConfluenceClient(argv);
                         await confDelete(client, `/footer-comments/${argv['comment-id']}`, null);
                         console.log('Footer comment deleted successfully.');
@@ -1335,7 +1442,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                         y = addSortOption(y);
                         return addBodyFormatOption(y);
                       },
-                      async (argv: any) => {
+                      async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                         const client = getConfluenceClient(argv);
                         const q = getPaginationQuery(argv);
                         const data = await confGetPaginated(client, `/footer-comments/${argv['comment-id']}/children`, q, argv.all);
@@ -1346,7 +1453,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                       'operations <comment-id>',
                       'Get permitted operations',
                       (y: Argv) => y.positional('comment-id', { type: 'string' }),
-                      async (argv: any) => {
+                      async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                         const client = getConfluenceClient(argv);
                         const data = await confGet(client, `/footer-comments/${argv['comment-id']}/operations`, null);
                         printJSON(data);
@@ -1360,7 +1467,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                         y = addSortOption(y);
                         return addBodyFormatOption(y);
                       },
-                      async (argv: any) => {
+                      async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                         const client = getConfluenceClient(argv);
                         const q = getPaginationQuery(argv);
                         const data = await confGetPaginated(client, `/footer-comments/${argv['comment-id']}/versions`, q, argv.all);
@@ -1374,7 +1481,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                         y
                           .positional('comment-id', { type: 'string' })
                           .positional('version-number', { type: 'string' }),
-                      async (argv: any) => {
+                      async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                         const client = getConfluenceClient(argv);
                         const data = await confGet(client, `/footer-comments/${argv['comment-id']}/versions/${argv['version-number']}`, null);
                         printJSON(data);
@@ -1384,7 +1491,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                       'likes-count <comment-id>',
                       'Get like count',
                       (y: Argv) => y.positional('comment-id', { type: 'string' }),
-                      async (argv: any) => {
+                      async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                         const client = getConfluenceClient(argv);
                         const data = await confGet(client, `/footer-comments/${argv['comment-id']}/likes/count`, null);
                         printJSON(data);
@@ -1394,7 +1501,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                       'likes-users <comment-id>',
                       'Get like users',
                       (y: Argv) => addPaginationOptions(y.positional('comment-id', { type: 'string' }) as Argv),
-                      async (argv: any) => {
+                      async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                         const client = getConfluenceClient(argv);
                         const q = getPaginationQuery(argv);
                         const data = await confGetPaginated(client, `/footer-comments/${argv['comment-id']}/likes/users`, q, argv.all);
@@ -1418,7 +1525,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                         y = addSortOption(y);
                         return addBodyFormatOption(y);
                       },
-                      async (argv: any) => {
+                      async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                         const client = getConfluenceClient(argv);
                         const q = getPaginationQuery(argv);
                         const data = await confGetPaginated(client, '/inline-comments', q, argv.all);
@@ -1438,11 +1545,11 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                           .option('include-versions', { type: 'boolean', default: false })
                           .option('include-version', { type: 'boolean', default: false });
                       },
-                      async (argv: any) => {
+                      async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                         const client = getConfluenceClient(argv);
                         const q: Record<string, string | string[]> = {};
                         if (argv['body-format']) q['body-format'] = argv['body-format'];
-                        if (argv.version > 0) q.version = String(argv.version);
+                        if (argv.version != null && argv.version > 0) q.version = String(argv.version);
                         for (const flag of ['include-properties', 'include-operations', 'include-likes', 'include-versions', 'include-version']) {
                           if (argv[flag]) q[flag] = 'true';
                         }
@@ -1461,9 +1568,9 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                           .option('body', { type: 'string', describe: 'Comment body content' })
                           .option('body-format', { type: 'string', default: 'storage', describe: 'Body format' })
                           .option('inline-comment-properties', { type: 'string', describe: 'JSON inline comment properties' }),
-                      async (argv: any) => {
+                      async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                         const client = getConfluenceClient(argv);
-                        const body: Record<string, any> = {};
+                        const body: Record<string, JsonBody> = {};
                         if (argv['page-id']) body.pageId = argv['page-id'];
                         if (argv['blogpost-id']) body.blogPostId = argv['blogpost-id'];
                         if (argv['parent-comment-id']) body.parentCommentId = argv['parent-comment-id'];
@@ -1486,10 +1593,10 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                           .option('body', { type: 'string', describe: 'Comment body content' })
                           .option('body-format', { type: 'string', default: 'storage', describe: 'Body format' })
                           .option('resolved', { type: 'boolean', describe: 'Resolved state' }),
-                      async (argv: any) => {
+                      async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                         const client = getConfluenceClient(argv);
-                        const body: Record<string, any> = {
-                          version: { number: argv['version-number'], message: argv['version-message'] || '' },
+                        const body: Record<string, JsonBody> = {
+                          version: { number: argv['version-number']!, message: argv['version-message'] || '' },
                         };
                         if (argv.body) body.body = { representation: argv['body-format'], value: argv.body };
                         if (argv.resolved !== undefined) body.resolved = argv.resolved;
@@ -1501,7 +1608,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                       'delete <comment-id>',
                       'Delete an inline comment',
                       (y: Argv) => y.positional('comment-id', { type: 'string' }),
-                      async (argv: any) => {
+                      async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                         const client = getConfluenceClient(argv);
                         await confDelete(client, `/inline-comments/${argv['comment-id']}`, null);
                         console.log('Inline comment deleted successfully.');
@@ -1515,7 +1622,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                         y = addSortOption(y);
                         return addBodyFormatOption(y);
                       },
-                      async (argv: any) => {
+                      async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                         const client = getConfluenceClient(argv);
                         const q = getPaginationQuery(argv);
                         const data = await confGetPaginated(client, `/inline-comments/${argv['comment-id']}/children`, q, argv.all);
@@ -1526,7 +1633,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                       'operations <comment-id>',
                       'Get permitted operations',
                       (y: Argv) => y.positional('comment-id', { type: 'string' }),
-                      async (argv: any) => {
+                      async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                         const client = getConfluenceClient(argv);
                         const data = await confGet(client, `/inline-comments/${argv['comment-id']}/operations`, null);
                         printJSON(data);
@@ -1540,7 +1647,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                         y = addSortOption(y);
                         return addBodyFormatOption(y);
                       },
-                      async (argv: any) => {
+                      async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                         const client = getConfluenceClient(argv);
                         const q = getPaginationQuery(argv);
                         const data = await confGetPaginated(client, `/inline-comments/${argv['comment-id']}/versions`, q, argv.all);
@@ -1554,7 +1661,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                         y
                           .positional('comment-id', { type: 'string' })
                           .positional('version-number', { type: 'string' }),
-                      async (argv: any) => {
+                      async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                         const client = getConfluenceClient(argv);
                         const data = await confGet(client, `/inline-comments/${argv['comment-id']}/versions/${argv['version-number']}`, null);
                         printJSON(data);
@@ -1564,7 +1671,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                       'likes-count <comment-id>',
                       'Get like count',
                       (y: Argv) => y.positional('comment-id', { type: 'string' }),
-                      async (argv: any) => {
+                      async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                         const client = getConfluenceClient(argv);
                         const data = await confGet(client, `/inline-comments/${argv['comment-id']}/likes/count`, null);
                         printJSON(data);
@@ -1574,7 +1681,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                       'likes-users <comment-id>',
                       'Get like users',
                       (y: Argv) => addPaginationOptions(y.positional('comment-id', { type: 'string' }) as Argv),
-                      async (argv: any) => {
+                      async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                         const client = getConfluenceClient(argv);
                         const q = getPaginationQuery(argv);
                         const data = await confGetPaginated(client, `/inline-comments/${argv['comment-id']}/likes/users`, q, argv.all);
@@ -1608,7 +1715,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                     .option('label-id', { type: 'array', describe: 'Filter by label IDs' })
                     .option('prefix', { type: 'array', describe: 'Filter by prefix' });
                 },
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const q = getPaginationQuery(argv);
                   if (argv['label-id'] && argv['label-id'].length > 0) q['label-id'] = argv['label-id'];
@@ -1626,7 +1733,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                   y = addBodyFormatOption(y);
                   return y.option('space-id', { type: 'array', describe: 'Filter by space IDs' });
                 },
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const q = getPaginationQuery(argv);
                   if (argv['space-id'] && argv['space-id'].length > 0) q['space-id'] = argv['space-id'];
@@ -1643,7 +1750,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                   y = addBodyFormatOption(y);
                   return y.option('space-id', { type: 'array', describe: 'Filter by space IDs' });
                 },
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const q = getPaginationQuery(argv);
                   if (argv['space-id'] && argv['space-id'].length > 0) q['space-id'] = argv['space-id'];
@@ -1655,7 +1762,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                 'attachments <label-id>',
                 'Get attachments for label',
                 (y: Argv) => addSortOption(addPaginationOptions(y.positional('label-id', { type: 'string' }) as Argv)),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const q = getPaginationQuery(argv);
                   const data = await confGetPaginated(client, `/labels/${argv['label-id']}/attachments`, q, argv.all);
@@ -1686,7 +1793,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                     .option('media-type', { type: 'string', describe: 'Filter by media type' })
                     .option('filename', { type: 'string', describe: 'Filter by filename' });
                 },
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const q = getPaginationQuery(argv);
                   if (argv['media-type']) q.mediaType = argv['media-type'];
@@ -1708,10 +1815,10 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                     .option('include-versions', { type: 'boolean', default: false })
                     .option('include-version', { type: 'boolean', default: false })
                     .option('include-collaborators', { type: 'boolean', default: false }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const q: Record<string, string | string[]> = {};
-                  if (argv.version > 0) q.version = String(argv.version);
+                  if (argv.version != null && argv.version > 0) q.version = String(argv.version);
                   for (const flag of ['include-labels', 'include-properties', 'include-operations', 'include-versions', 'include-version', 'include-collaborators']) {
                     if (argv[flag]) q[flag] = 'true';
                   }
@@ -1726,7 +1833,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                   y
                     .positional('attachment-id', { type: 'string' })
                     .option('purge', { type: 'boolean', default: false, describe: 'Purge the attachment' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const q: Record<string, string | string[]> = {};
                   if (argv.purge) q.purge = 'true';
@@ -1742,7 +1849,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                   y = addSortOption(y);
                   return y.option('prefix', { type: 'string', describe: 'Filter by prefix' });
                 },
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const q = getPaginationQuery(argv);
                   if (argv.prefix) q.prefix = argv.prefix;
@@ -1759,10 +1866,10 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                   y = addBodyFormatOption(y);
                   return y.option('version', { type: 'number', default: 0, describe: 'Filter by version' });
                 },
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const q = getPaginationQuery(argv);
-                  if (argv.version > 0) q.version = String(argv.version);
+                  if (argv.version != null && argv.version > 0) q.version = String(argv.version);
                   const data = await confGetPaginated(client, `/attachments/${argv['attachment-id']}/footer-comments`, q, argv.all);
                   printJSON(data);
                 }
@@ -1771,7 +1878,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                 'operations <attachment-id>',
                 'Get permitted operations',
                 (y: Argv) => y.positional('attachment-id', { type: 'string' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const data = await confGet(client, `/attachments/${argv['attachment-id']}/operations`, null);
                   printJSON(data);
@@ -1781,7 +1888,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                 'versions <attachment-id>',
                 'Get attachment versions',
                 (y: Argv) => addSortOption(addPaginationOptions(y.positional('attachment-id', { type: 'string' }) as Argv)),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const q = getPaginationQuery(argv);
                   const data = await confGetPaginated(client, `/attachments/${argv['attachment-id']}/versions`, q, argv.all);
@@ -1795,7 +1902,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                   y
                     .positional('attachment-id', { type: 'string' })
                     .positional('version-number', { type: 'string' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const data = await confGet(client, `/attachments/${argv['attachment-id']}/versions/${argv['version-number']}`, null);
                   printJSON(data);
@@ -1837,7 +1944,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                     .option('completed-at-from', { type: 'string', describe: 'Filter by completion date start (epoch ms)' })
                     .option('completed-at-to', { type: 'string', describe: 'Filter by completion date end (epoch ms)' });
                 },
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const q = getPaginationQuery(argv);
                   if (argv['task-status']) q.status = argv['task-status'];
@@ -1850,7 +1957,8 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                   if (argv['completed-by'] && argv['completed-by'].length > 0) q['completed-by'] = argv['completed-by'];
                   if (argv['include-blank-tasks']) q['include-blank-tasks'] = 'true';
                   for (const f of ['created-at-from', 'created-at-to', 'due-at-from', 'due-at-to', 'completed-at-from', 'completed-at-to']) {
-                    if (argv[f]) q[f] = argv[f];
+                    const v = argv[f];
+                    if (typeof v === 'string') q[f] = v;
                   }
                   const data = await confGetPaginated(client, '/tasks', q, argv.all);
                   printJSON(data);
@@ -1860,7 +1968,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                 'get <task-id>',
                 'Get task by ID',
                 (y: Argv) => addBodyFormatOption(y.positional('task-id', { type: 'string' }) as Argv),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const q = getPaginationQuery(argv);
                   const data = await confGet(client, `/tasks/${argv['task-id']}`, q);
@@ -1878,10 +1986,10 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                     .option('assigned-to', { type: 'string', describe: 'Assignee account ID' })
                     .option('due-at', { type: 'string', describe: 'Due date' });
                 },
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const q = getPaginationQuery(argv);
-                  const body: Record<string, any> = { status: argv['task-status'] };
+                  const body: Record<string, JsonBody> = { status: argv['task-status']! };
                   if (argv['task-id-field']) body.id = argv['task-id-field'];
                   if (argv['assigned-to']) body.assignedTo = argv['assigned-to'];
                   if (argv['due-at']) body.dueAt = argv['due-at'];
@@ -1914,7 +2022,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                     .option('id', { type: 'array', describe: 'Filter by IDs' })
                     .option('space-id', { type: 'array', describe: 'Filter by space IDs' });
                 },
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const q = getPaginationQuery(argv);
                   if (argv.type) q.type = argv.type;
@@ -1938,11 +2046,11 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                     .option('include-version', { type: 'boolean', default: false })
                     .option('include-collaborators', { type: 'boolean', default: false });
                 },
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const q: Record<string, string | string[]> = {};
                   if (argv['body-format']) q['body-format'] = argv['body-format'];
-                  if (argv.version > 0) q.version = String(argv.version);
+                  if (argv.version != null && argv.version > 0) q.version = String(argv.version);
                   for (const flag of ['include-labels', 'include-properties', 'include-operations', 'include-versions', 'include-version', 'include-collaborators']) {
                     if (argv[flag]) q[flag] = 'true';
                   }
@@ -1964,15 +2072,15 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                     .option('custom-content-id', { type: 'string', describe: 'Parent custom content ID' })
                     .option('body', { type: 'string', describe: 'Body content' })
                     .option('body-format', { type: 'string', default: 'storage', describe: 'Body format' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
-                  const body: Record<string, any> = { type: argv.type, title: argv.title };
+                  const body: Record<string, JsonBody> = { type: argv.type!, title: argv.title! };
                   if (argv.status) body.status = argv.status;
                   if (argv['space-id']) body.spaceId = argv['space-id'];
                   if (argv['page-id']) body.pageId = argv['page-id'];
                   if (argv['blogpost-id']) body.blogPostId = argv['blogpost-id'];
                   if (argv['custom-content-id']) body.customContentId = argv['custom-content-id'];
-                  if (argv.body) body.body = { representation: argv['body-format'], value: argv.body };
+                  if (argv.body) body.body = { representation: argv['body-format']!, value: argv.body };
                   const data = await confPost(client, '/custom-content', null, body);
                   printJSON(data);
                 }
@@ -1994,16 +2102,16 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                     .option('page-id', { type: 'string', describe: 'Page ID' })
                     .option('blogpost-id', { type: 'string', describe: 'Blog post ID' })
                     .option('custom-content-id-parent', { type: 'string', describe: 'Parent custom content ID' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
-                  const body: Record<string, any> = {
-                    id: argv['custom-content-id'],
-                    type: argv.type,
-                    status: argv.status,
-                    title: argv.title,
-                    version: { number: argv['version-number'], message: argv['version-message'] || '' },
+                  const body: Record<string, JsonBody> = {
+                    id: argv['custom-content-id']!,
+                    type: argv.type!,
+                    status: argv.status!,
+                    title: argv.title!,
+                    version: { number: argv['version-number']!, message: argv['version-message'] || '' },
                   };
-                  if (argv.body) body.body = { representation: argv['body-format'], value: argv.body };
+                  if (argv.body) body.body = { representation: argv['body-format']!, value: argv.body };
                   if (argv['space-id']) body.spaceId = argv['space-id'];
                   if (argv['page-id']) body.pageId = argv['page-id'];
                   if (argv['blogpost-id']) body.blogPostId = argv['blogpost-id'];
@@ -2019,7 +2127,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                   y
                     .positional('custom-content-id', { type: 'string' })
                     .option('purge', { type: 'boolean', default: false, describe: 'Purge the custom content' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const q: Record<string, string | string[]> = {};
                   if (argv.purge) q.purge = 'true';
@@ -2038,7 +2146,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                     .option('media-type', { type: 'string', describe: 'Filter by media type' })
                     .option('filename', { type: 'string', describe: 'Filter by filename' });
                 },
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const q = getPaginationQuery(argv);
                   if (argv['media-type']) q.mediaType = argv['media-type'];
@@ -2051,7 +2159,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                 'children <id>',
                 'Get child custom content',
                 (y: Argv) => addSortOption(addPaginationOptions(y.positional('id', { type: 'string' }) as Argv)),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const q = getPaginationQuery(argv);
                   const data = await confGetPaginated(client, `/custom-content/${argv.id}/children`, q, argv.all);
@@ -2066,7 +2174,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                   y = addSortOption(y);
                   return y.option('prefix', { type: 'string', describe: 'Filter by prefix' });
                 },
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const q = getPaginationQuery(argv);
                   if (argv.prefix) q.prefix = argv.prefix;
@@ -2082,7 +2190,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                   y = addSortOption(y);
                   return addBodyFormatOption(y);
                 },
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const q = getPaginationQuery(argv);
                   const data = await confGetPaginated(client, `/custom-content/${argv.id}/footer-comments`, q, argv.all);
@@ -2093,7 +2201,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                 'operations <id>',
                 'Get permitted operations',
                 (y: Argv) => y.positional('id', { type: 'string' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const data = await confGet(client, `/custom-content/${argv.id}/operations`, null);
                   printJSON(data);
@@ -2107,7 +2215,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                   y = addSortOption(y);
                   return addBodyFormatOption(y);
                 },
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const q = getPaginationQuery(argv);
                   const data = await confGetPaginated(client, `/custom-content/${argv.id}/versions`, q, argv.all);
@@ -2121,7 +2229,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                   y
                     .positional('id', { type: 'string' })
                     .positional('version-number', { type: 'string' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const data = await confGet(client, `/custom-content/${argv.id}/versions/${argv['version-number']}`, null);
                   printJSON(data);
@@ -2151,11 +2259,11 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                     .option('template-key', { type: 'string', describe: 'Template key' })
                     .option('locale', { type: 'string', describe: 'Locale' })
                     .option('private', { type: 'boolean', default: false, describe: 'Create as private' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const q: Record<string, string | string[]> = {};
                   if (argv.private) q.private = 'true';
-                  const body: Record<string, any> = { spaceId: argv['space-id'] };
+                  const body: Record<string, JsonBody> = { spaceId: argv['space-id']! };
                   if (argv.title) body.title = argv.title;
                   if (argv['parent-id']) body.parentId = argv['parent-id'];
                   if (argv['template-key']) body.templateKey = argv['template-key'];
@@ -2168,7 +2276,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                 'get <whiteboard-id>',
                 'Get whiteboard by ID',
                 (y: Argv) => addIncludeTreeOptions(y.positional('whiteboard-id', { type: 'string' }) as Argv),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const q: Record<string, string | string[]> = {};
                   for (const flag of ['include-collaborators', 'include-direct-children', 'include-operations', 'include-properties']) {
@@ -2182,7 +2290,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                 'delete <whiteboard-id>',
                 'Delete a whiteboard',
                 (y: Argv) => y.positional('whiteboard-id', { type: 'string' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   await confDelete(client, `/whiteboards/${argv['whiteboard-id']}`, null);
                   console.log('Whiteboard deleted successfully.');
@@ -2211,11 +2319,11 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                     .option('title', { type: 'string', describe: 'Database title' })
                     .option('parent-id', { type: 'string', describe: 'Parent ID' })
                     .option('private', { type: 'boolean', default: false, describe: 'Create as private' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const q: Record<string, string | string[]> = {};
                   if (argv.private) q.private = 'true';
-                  const body: Record<string, any> = { spaceId: argv['space-id'] };
+                  const body: Record<string, JsonBody> = { spaceId: argv['space-id']! };
                   if (argv.title) body.title = argv.title;
                   if (argv['parent-id']) body.parentId = argv['parent-id'];
                   const data = await confPost(client, '/databases', q, body);
@@ -2226,7 +2334,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                 'get <database-id>',
                 'Get database by ID',
                 (y: Argv) => addIncludeTreeOptions(y.positional('database-id', { type: 'string' }) as Argv),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const q: Record<string, string | string[]> = {};
                   for (const flag of ['include-collaborators', 'include-direct-children', 'include-operations', 'include-properties']) {
@@ -2240,7 +2348,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                 'delete <database-id>',
                 'Delete a database',
                 (y: Argv) => y.positional('database-id', { type: 'string' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   await confDelete(client, `/databases/${argv['database-id']}`, null);
                   console.log('Database deleted successfully.');
@@ -2268,9 +2376,9 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                     .option('space-id', { type: 'string', demandOption: true, describe: 'Space ID' })
                     .option('title', { type: 'string', describe: 'Folder title' })
                     .option('parent-id', { type: 'string', describe: 'Parent ID' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
-                  const body: Record<string, any> = { spaceId: argv['space-id'] };
+                  const body: Record<string, JsonBody> = { spaceId: argv['space-id']! };
                   if (argv.title) body.title = argv.title;
                   if (argv['parent-id']) body.parentId = argv['parent-id'];
                   const data = await confPost(client, '/folders', null, body);
@@ -2281,7 +2389,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                 'get <folder-id>',
                 'Get folder by ID',
                 (y: Argv) => addIncludeTreeOptions(y.positional('folder-id', { type: 'string' }) as Argv),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const q: Record<string, string | string[]> = {};
                   for (const flag of ['include-collaborators', 'include-direct-children', 'include-operations', 'include-properties']) {
@@ -2295,7 +2403,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                 'delete <folder-id>',
                 'Delete a folder',
                 (y: Argv) => y.positional('folder-id', { type: 'string' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   await confDelete(client, `/folders/${argv['folder-id']}`, null);
                   console.log('Folder deleted successfully.');
@@ -2324,9 +2432,9 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                     .option('title', { type: 'string', describe: 'Smart link title' })
                     .option('parent-id', { type: 'string', describe: 'Parent ID' })
                     .option('embed-url', { type: 'string', describe: 'Embed URL' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
-                  const body: Record<string, any> = { spaceId: argv['space-id'] };
+                  const body: Record<string, JsonBody> = { spaceId: argv['space-id']! };
                   if (argv.title) body.title = argv.title;
                   if (argv['parent-id']) body.parentId = argv['parent-id'];
                   if (argv['embed-url']) body.embedUrl = argv['embed-url'];
@@ -2338,7 +2446,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                 'get <smart-link-id>',
                 'Get smart link by ID',
                 (y: Argv) => addIncludeTreeOptions(y.positional('smart-link-id', { type: 'string' }) as Argv),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const q: Record<string, string | string[]> = {};
                   for (const flag of ['include-collaborators', 'include-direct-children', 'include-operations', 'include-properties']) {
@@ -2352,7 +2460,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                 'delete <smart-link-id>',
                 'Delete a smart link',
                 (y: Argv) => y.positional('smart-link-id', { type: 'string' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   await confDelete(client, `/embeds/${argv['smart-link-id']}`, null);
                   console.log('Smart link deleted successfully.');
@@ -2396,7 +2504,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                         y = addSortOption(y);
                         return y.option('key', { type: 'string', describe: 'Filter by property key' });
                       },
-                      async (argv: any) => {
+                      async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                         const client = getConfluenceClient(argv);
                         const q = getPaginationQuery(argv);
                         if (argv.key) q.key = argv.key;
@@ -2411,7 +2519,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                         y
                           .positional(idParam, { type: 'string' })
                           .positional('property-id', { type: 'string' }),
-                      async (argv: any) => {
+                      async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                         const client = getConfluenceClient(argv);
                         const data = await confGet(client, `${pathPrefix}/${argv[idParam]}/properties/${argv['property-id']}`, null);
                         printJSON(data);
@@ -2425,9 +2533,9 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                           .positional(idParam, { type: 'string' })
                           .option('key', { type: 'string', demandOption: true, describe: 'Property key' })
                           .option('value', { type: 'string', describe: 'Property value (JSON)' }),
-                      async (argv: any) => {
+                      async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                         const client = getConfluenceClient(argv);
-                        const body: Record<string, any> = { key: argv.key };
+                        const body: Record<string, JsonBody> = { key: argv.key! };
                         if (argv.value) body.value = parseJSONOrString(argv.value);
                         const data = await confPost(client, `${pathPrefix}/${argv[idParam]}/properties`, null, body);
                         printJSON(data);
@@ -2444,11 +2552,11 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                           .option('value', { type: 'string', describe: 'Property value (JSON)' })
                           .option('version-number', { type: 'number', demandOption: true, describe: 'Version number' })
                           .option('version-message', { type: 'string', describe: 'Version message' }),
-                      async (argv: any) => {
+                      async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                         const client = getConfluenceClient(argv);
-                        const body: Record<string, any> = {
-                          key: argv.key,
-                          version: { number: argv['version-number'], message: argv['version-message'] || '' },
+                        const body: Record<string, JsonBody> = {
+                          key: argv.key!,
+                          version: { number: argv['version-number']!, message: argv['version-message'] || '' },
                         };
                         if (argv.value) body.value = parseJSONOrString(argv.value);
                         const data = await confPut(client, `${pathPrefix}/${argv[idParam]}/properties/${argv['property-id']}`, null, body);
@@ -2462,7 +2570,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                         y
                           .positional(idParam, { type: 'string' })
                           .positional('property-id', { type: 'string' }),
-                      async (argv: any) => {
+                      async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                         const client = getConfluenceClient(argv);
                         await confDelete(client, `${pathPrefix}/${argv[idParam]}/properties/${argv['property-id']}`, null);
                         console.log('Property deleted successfully.');
@@ -2487,7 +2595,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                       y = addSortOption(y);
                       return y.option('key', { type: 'string', describe: 'Filter by property key' });
                     },
-                    async (argv: any) => {
+                    async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                       const client = getConfluenceClient(argv);
                       const q = getPaginationQuery(argv);
                       if (argv.key) q.key = argv.key;
@@ -2502,7 +2610,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                       y
                         .positional('space-id', { type: 'string' })
                         .positional('property-id', { type: 'string' }),
-                    async (argv: any) => {
+                    async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                       const client = getConfluenceClient(argv);
                       const data = await confGet(client, `/spaces/${argv['space-id']}/properties/${argv['property-id']}`, null);
                       printJSON(data);
@@ -2516,9 +2624,9 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                         .positional('space-id', { type: 'string' })
                         .option('key', { type: 'string', demandOption: true, describe: 'Property key' })
                         .option('value', { type: 'string', describe: 'Property value (JSON)' }),
-                    async (argv: any) => {
+                    async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                       const client = getConfluenceClient(argv);
-                      const body: Record<string, any> = { key: argv.key };
+                      const body: Record<string, JsonBody> = { key: argv.key! };
                       if (argv.value) body.value = parseJSONOrString(argv.value);
                       const data = await confPost(client, `/spaces/${argv['space-id']}/properties`, null, body);
                       printJSON(data);
@@ -2535,11 +2643,11 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                         .option('value', { type: 'string', describe: 'Property value (JSON)' })
                         .option('version-number', { type: 'number', demandOption: true, describe: 'Version number' })
                         .option('version-message', { type: 'string', describe: 'Version message' }),
-                    async (argv: any) => {
+                    async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                       const client = getConfluenceClient(argv);
-                      const body: Record<string, any> = {
-                        key: argv.key,
-                        version: { number: argv['version-number'], message: argv['version-message'] || '' },
+                      const body: Record<string, JsonBody> = {
+                        key: argv.key!,
+                        version: { number: argv['version-number']!, message: argv['version-message'] || '' },
                       };
                       if (argv.value) body.value = parseJSONOrString(argv.value);
                       const data = await confPut(client, `/spaces/${argv['space-id']}/properties/${argv['property-id']}`, null, body);
@@ -2553,7 +2661,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                       y
                         .positional('space-id', { type: 'string' })
                         .positional('property-id', { type: 'string' }),
-                    async (argv: any) => {
+                    async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                       const client = getConfluenceClient(argv);
                       await confDelete(client, `/spaces/${argv['space-id']}/properties/${argv['property-id']}`, null);
                       console.log('Space property deleted successfully.');
@@ -2581,7 +2689,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                 'available',
                 'Get available space permissions',
                 () => {},
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const data = await confGet(client, '/space-permissions', null);
                   printJSON(data);
@@ -2604,7 +2712,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                 'get',
                 'Get admin key status',
                 () => {},
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const data = await confGet(client, '/admin-key', null);
                   printJSON(data);
@@ -2614,10 +2722,10 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                 'enable',
                 'Enable admin key',
                 (y: Argv) => y.option('duration', { type: 'number', default: 0, describe: 'Duration in minutes' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
-                  const body: Record<string, any> = {};
-                  if (argv.duration > 0) body.durationInMinutes = argv.duration;
+                  const body: Record<string, JsonBody> = {};
+                  if (argv.duration != null && argv.duration > 0) body.durationInMinutes = argv.duration;
                   const data = await confPost(client, '/admin-key', null, body);
                   printJSON(data);
                 }
@@ -2626,7 +2734,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                 'disable',
                 'Disable admin key',
                 () => {},
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   await confDelete(client, '/admin-key', null);
                   console.log('Admin key disabled successfully.');
@@ -2649,7 +2757,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                 'metadata',
                 'Get data policy metadata for the workspace',
                 () => {},
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const data = await confGet(client, '/data-policies/metadata', null);
                   printJSON(data);
@@ -2665,11 +2773,11 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                     .option('ids', { type: 'array', describe: 'Filter by space IDs' })
                     .option('keys', { type: 'array', describe: 'Filter by space keys' });
                 },
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const q: Record<string, string | string[]> = {};
                   if (argv.cursor) q.cursor = argv.cursor;
-                  if (argv.limit > 0) q.limit = String(argv.limit);
+                  if (argv.limit != null && argv.limit > 0) q.limit = String(argv.limit);
                   if (argv.sort) q.sort = argv.sort;
                   if (argv.ids && argv.ids.length > 0) q.ids = argv.ids;
                   if (argv.keys && argv.keys.length > 0) q.keys = argv.keys;
@@ -2694,7 +2802,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                 ['list', 'ls'],
                 'Get list of classification levels',
                 (y: Argv) => addPaginationOptions(y),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const q = getPaginationQuery(argv);
                   const data = await confGetPaginated(client, '/classification-levels', q, argv.all);
@@ -2718,7 +2826,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                       'get <id>',
                       `Get ${name} classification level`,
                       (y: Argv) => y.positional('id', { type: 'string' }),
-                      async (argv: any) => {
+                      async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                         const client = getConfluenceClient(argv);
                         const data = await confGet(client, `${pathPrefix}/${argv.id}/classification-level`, null);
                         printJSON(data);
@@ -2732,7 +2840,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                           .positional('id', { type: 'string' })
                           .option('classification-id', { type: 'string', demandOption: true, describe: 'Classification level ID' })
                           .option('status', { type: 'string', demandOption: true, describe: 'Status' }),
-                      async (argv: any) => {
+                      async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                         const client = getConfluenceClient(argv);
                         const body = { id: argv['classification-id'], status: argv.status };
                         const data = await confPut(client, `${pathPrefix}/${argv.id}/classification-level`, null, body);
@@ -2746,7 +2854,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                         y
                           .positional('id', { type: 'string' })
                           .option('status', { type: 'string', demandOption: true, describe: 'Status' }),
-                      async (argv: any) => {
+                      async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                         const client = getConfluenceClient(argv);
                         const body = { status: argv.status };
                         const data = await confPost(client, `${pathPrefix}/${argv.id}/classification-level/reset`, null, body);
@@ -2768,7 +2876,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                     'get <space-id>',
                     'Get space default classification level',
                     (y: Argv) => y.positional('space-id', { type: 'string' }),
-                    async (argv: any) => {
+                    async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                       const client = getConfluenceClient(argv);
                       const data = await confGet(client, `/spaces/${argv['space-id']}/classification-level/default`, null);
                       printJSON(data);
@@ -2781,7 +2889,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                       y
                         .positional('space-id', { type: 'string' })
                         .option('classification-id', { type: 'string', demandOption: true, describe: 'Classification level ID' }),
-                    async (argv: any) => {
+                    async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                       const client = getConfluenceClient(argv);
                       const body = { id: argv['classification-id'] };
                       const data = await confPut(client, `/spaces/${argv['space-id']}/classification-level/default`, null, body);
@@ -2792,7 +2900,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                     'delete <space-id>',
                     'Delete space default classification level',
                     (y: Argv) => y.positional('space-id', { type: 'string' }),
-                    async (argv: any) => {
+                    async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                       const client = getConfluenceClient(argv);
                       await confDelete(client, `/spaces/${argv['space-id']}/classification-level/default`, null);
                       console.log('Space default classification level deleted successfully.');
@@ -2820,7 +2928,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                 'bulk-lookup [account-ids..]',
                 'Create bulk user lookup using IDs',
                 (y: Argv) => y.positional('account-ids', { type: 'string' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const ids = argv['account-ids'] || [];
                   const data = await confPost(client, '/users-bulk', null, { accountIds: ids });
@@ -2831,7 +2939,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                 'check-access [emails..]',
                 'Check site access for a list of emails',
                 (y: Argv) => y.positional('emails', { type: 'string' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const emails = argv.emails || [];
                   const data = await confPost(client, '/user/access/check-access-by-email', null, { emails });
@@ -2842,7 +2950,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                 'invite [emails..]',
                 'Invite a list of emails to the site',
                 (y: Argv) => y.positional('emails', { type: 'string' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const emails = argv.emails || [];
                   const data = await confPost(client, '/user/access/invite-by-email', null, { emails });
@@ -2873,7 +2981,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                     .option('principal-id', { type: 'string', describe: 'Filter by principal ID' })
                     .option('principal-type', { type: 'string', describe: 'Filter by principal type' });
                 },
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const q: Record<string, string | string[]> = {};
                   if (argv['space-id']) q['space-id'] = argv['space-id'];
@@ -2881,7 +2989,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                   if (argv['principal-id']) q['principal-id'] = argv['principal-id'];
                   if (argv['principal-type']) q['principal-type'] = argv['principal-type'];
                   if (argv.cursor) q.cursor = argv.cursor;
-                  if (argv.limit > 0) q.limit = String(argv.limit);
+                  if (argv.limit != null && argv.limit > 0) q.limit = String(argv.limit);
                   const data = await confGetPaginated(client, '/space-roles', q, argv.all);
                   printJSON(data);
                 }
@@ -2890,7 +2998,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                 'get <role-id>',
                 'Get space role by ID',
                 (y: Argv) => y.positional('role-id', { type: 'string' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const data = await confGet(client, `/space-roles/${argv['role-id']}`, null);
                   printJSON(data);
@@ -2900,9 +3008,9 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                 'create',
                 'Create a space role',
                 (y: Argv) => y.option('body', { type: 'string', demandOption: true, describe: 'JSON space role definition' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
-                  const body = JSON.parse(argv.body);
+                  const body = JSON.parse(argv.body!) as JsonBody;
                   const data = await confPost(client, '/space-roles', null, body);
                   printJSON(data);
                 }
@@ -2914,9 +3022,9 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                   y
                     .positional('role-id', { type: 'string' })
                     .option('body', { type: 'string', demandOption: true, describe: 'JSON space role definition' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
-                  const body = JSON.parse(argv.body);
+                  const body = JSON.parse(argv.body!) as JsonBody;
                   const data = await confPut(client, `/space-roles/${argv['role-id']}`, null, body);
                   printJSON(data);
                 }
@@ -2925,7 +3033,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                 'delete <role-id>',
                 'Delete a space role',
                 (y: Argv) => y.positional('role-id', { type: 'string' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   await confDelete(client, `/space-roles/${argv['role-id']}`, null);
                   console.log('Space role deleted successfully.');
@@ -2935,7 +3043,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                 'mode',
                 'Get space role mode',
                 () => {},
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const data = await confGet(client, '/space-role-mode', null);
                   printJSON(data);
@@ -2953,7 +3061,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
           'convert-ids [content-ids..]',
           'Convert content IDs to content types',
           (y: Argv) => y.positional('content-ids', { type: 'string' }),
-          async (argv: any) => {
+          async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
             const client = getConfluenceClient(argv);
             const ids = argv['content-ids'] || [];
             const data = await confPost(client, '/content/convert-ids-to-types', null, { contentIds: ids });
@@ -2973,7 +3081,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                 ['list', 'ls'],
                 'Get Forge app properties',
                 () => {},
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const data = await confGet(client, '/app/properties', null);
                   printJSON(data);
@@ -2983,7 +3091,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                 'get <property-key>',
                 'Get a Forge app property by key',
                 (y: Argv) => y.positional('property-key', { type: 'string' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   const data = await confGet(client, `/app/properties/${argv['property-key']}`, null);
                   printJSON(data);
@@ -2996,9 +3104,9 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                   y
                     .positional('property-key', { type: 'string' })
                     .option('body', { type: 'string', demandOption: true, describe: 'JSON property value' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
-                  const body = JSON.parse(argv.body);
+                  const body = JSON.parse(argv.body!) as JsonBody;
                   const data = await confPut(client, `/app/properties/${argv['property-key']}`, null, body);
                   printJSON(data);
                 }
@@ -3007,7 +3115,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
                 'delete <property-key>',
                 'Delete a Forge app property',
                 (y: Argv) => y.positional('property-key', { type: 'string' }),
-                async (argv: any) => {
+                async (argv: ArgumentsCamelCase<ConfluenceArgv>) => {
                   const client = getConfluenceClient(argv);
                   await confDelete(client, `/app/properties/${argv['property-key']}`, null);
                   console.log('App property deleted successfully.');

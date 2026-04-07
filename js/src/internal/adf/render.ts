@@ -1,21 +1,19 @@
-interface ADFNode {
-  type: string;
-  text?: string;
-  content?: ADFNode[];
-  attrs?: Record<string, string>;
-}
+import type { ADFNode } from '../types.js';
 
-export function render(doc: unknown): string {
+export type { ADFNode };
+
+/**
+ * Renders an Atlassian Document Format tree (or string) to plain text.
+ * Accepts either an ADF tree, a plain string (passed through), or null/undefined.
+ */
+export function render(doc: ADFNode | string | null | undefined): string {
   if (doc == null) {
     return '';
   }
   if (typeof doc === 'string') {
     return doc;
   }
-  if (typeof doc === 'object') {
-    return renderNode(doc as ADFNode).replace(/\n+$/, '');
-  }
-  return String(doc);
+  return renderNode(doc).replace(/\n+$/, '');
 }
 
 function renderNode(node: ADFNode): string {
@@ -130,8 +128,8 @@ function renderListItem(node: ADFNode): string {
   }
   const parts: string[] = [];
   for (const child of content) {
-    if (child != null && typeof child === 'object') {
-      const text = renderNode(child as ADFNode).replace(/\n+$/, '');
+    if (child != null) {
+      const text = renderNode(child).replace(/\n+$/, '');
       if (text) {
         parts.push(text);
       }
@@ -152,7 +150,7 @@ function renderTableRow(node: ADFNode): string {
 }
 
 function nodeAttr(node: ADFNode, key: string): string | undefined {
-  if (!node.attrs || typeof node.attrs !== 'object') {
+  if (!node.attrs) {
     return undefined;
   }
   const val = node.attrs[key];

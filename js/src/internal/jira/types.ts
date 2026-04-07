@@ -1,5 +1,7 @@
 // Jira API type definitions, mirroring the Go types in internal/jira/types.go.
 
+import type { ADFNode, JsonValue, JsonBody } from '../types.js';
+
 // --- Pagination ---
 
 export interface Pagination {
@@ -197,7 +199,7 @@ export interface Comment {
   self?: string;
   id?: string;
   author?: UserDetails;
-  body?: unknown;
+  body?: ADFNode;
   updateAuthor?: UserDetails;
   created?: string;
   updated?: string;
@@ -214,7 +216,7 @@ export interface Worklog {
   id?: string;
   author?: UserDetails;
   updateAuthor?: UserDetails;
-  comment?: unknown;
+  comment?: ADFNode;
   created?: string;
   updated?: string;
   started?: string;
@@ -244,7 +246,7 @@ export interface Watches {
 
 export interface IssueFields {
   summary?: string;
-  description?: unknown;
+  description?: ADFNode;
   issuetype?: IssueType;
   project?: Project;
   status?: StatusDetails;
@@ -275,7 +277,7 @@ export interface Issue {
   id?: string;
   key?: string;
   self?: string;
-  fields?: Record<string, unknown>;
+  fields?: Record<string, JsonBody>;
 }
 
 export interface IssueDetailed {
@@ -292,16 +294,16 @@ export interface CreatedIssue {
 }
 
 export interface IssueUpdateDetails {
-  fields?: Record<string, unknown>;
+  fields?: Record<string, JsonBody>;
   update?: Record<string, FieldUpdateOperation[]>;
   transition?: IssueTransition;
 }
 
 export interface FieldUpdateOperation {
-  add?: unknown;
-  set?: unknown;
-  remove?: unknown;
-  edit?: unknown;
+  add?: JsonBody;
+  set?: JsonBody;
+  remove?: JsonBody;
+  edit?: JsonBody;
 }
 
 export interface IssueTransition {
@@ -382,7 +384,7 @@ export interface RemoteLink {
 
 export interface EntityProperty {
   key?: string;
-  value?: unknown;
+  value?: JsonValue;
 }
 
 // --- Create Meta ---
@@ -406,7 +408,7 @@ export interface CreateMetaIssueType {
   iconUrl?: string;
   name?: string;
   subtask?: boolean;
-  fields?: Record<string, unknown>;
+  fields?: Record<string, JsonBody>;
 }
 
 // --- Notification ---
@@ -438,6 +440,24 @@ export interface Permission {
   key?: string;
 }
 
+// --- Webhook registration ---
+
+export interface WebhookRegistrationItem {
+  events: string[];
+  jqlFilter: string;
+  fieldIdsFilter?: string[];
+  issuePropertyKeysFilter?: string[];
+}
+
+export interface WebhookRegistrationRequest {
+  url?: string;
+  webhooks: WebhookRegistrationItem[];
+}
+
+export interface WebhookRegistrationResponse {
+  webhookRegistrationResult: Webhook[];
+}
+
 // --- Bulk ---
 
 export interface BulkIssueCreateRequest {
@@ -446,7 +466,7 @@ export interface BulkIssueCreateRequest {
 
 export interface BulkIssueCreateResponse {
   issues: CreatedIssue[];
-  errors: unknown[];
+  errors: JsonValue[];
 }
 
 // --- Admin entities ---

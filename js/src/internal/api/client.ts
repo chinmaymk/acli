@@ -1,3 +1,5 @@
+import type { JsonBody } from '../types.js';
+
 export interface ConfluenceClient {
   baseURL: string;
   email: string;
@@ -12,12 +14,12 @@ export function createClient(baseURL: string, email: string, apiToken: string): 
   };
 }
 
-export async function confluenceV2<T = unknown>(
+export async function confluenceV2<T>(
   client: ConfluenceClient,
   method: string,
   path: string,
   query?: Record<string, string> | null,
-  body?: unknown,
+  body?: JsonBody,
 ): Promise<T> {
   let endpoint = client.baseURL + '/wiki/api/v2' + path;
 

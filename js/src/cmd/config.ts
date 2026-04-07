@@ -1,6 +1,8 @@
 import readline from 'readline';
-import type { Argv } from 'yargs';
+import type { Argv, ArgumentsCamelCase } from 'yargs';
 import * as config from '../internal/config/config.js';
+
+type ConfigArgv = ArgumentsCamelCase<{ 'profile-name'?: string }>;
 
 /**
  * Prompt for input with an optional default value display.
@@ -61,7 +63,7 @@ export function registerConfigCommands(yargs: Argv): Argv {
           describe: 'Name of the profile to create or update',
         });
       },
-      async (argv: { 'profile-name'?: string; [key: string]: unknown }) => {
+      async (argv: ConfigArgv) => {
         const profileName = argv['profile-name'] as string;
 
         let cfg: config.Config;
@@ -128,7 +130,7 @@ export function registerConfigCommands(yargs: Argv): Argv {
       ['list', 'ls'],
       'List all configured profiles',
       () => {},
-      (_argv: unknown) => {
+      () => {
         let cfg: config.Config;
         try {
           cfg = config.load();
@@ -170,7 +172,7 @@ export function registerConfigCommands(yargs: Argv): Argv {
           describe: 'Name of the profile to show (defaults to current default profile)',
         });
       },
-      (argv: { 'profile-name'?: string; [key: string]: unknown }) => {
+      (argv: ConfigArgv) => {
         let cfg: config.Config;
         try {
           cfg = config.load();
@@ -214,7 +216,7 @@ export function registerConfigCommands(yargs: Argv): Argv {
           describe: 'Name of the profile to delete',
         });
       },
-      (argv: { 'profile-name'?: string; [key: string]: unknown }) => {
+      (argv: ConfigArgv) => {
         const profileName = argv['profile-name'] as string;
 
         let cfg: config.Config;
@@ -257,7 +259,7 @@ export function registerConfigCommands(yargs: Argv): Argv {
           describe: 'Name of the profile to set as default',
         });
       },
-      (argv: { 'profile-name'?: string; [key: string]: unknown }) => {
+      (argv: ConfigArgv) => {
         const profileName = argv['profile-name'] as string;
 
         let cfg: config.Config;
@@ -291,7 +293,7 @@ export function registerConfigCommands(yargs: Argv): Argv {
           describe: 'Name of the profile to set defaults for (uses current default if omitted)',
         });
       },
-      async (argv: { 'profile-name'?: string; [key: string]: unknown }) => {
+      async (argv: ConfigArgv) => {
         let cfg: config.Config;
         try {
           cfg = config.load();
