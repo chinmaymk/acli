@@ -50,10 +50,10 @@ func init() {
 			}
 
 			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-			_, _ = fmt.Fprintln(w, "ID\tSTATE\tCONTENT\tCREATOR\tCREATED")
+			_, _ = fmt.Fprintln(w, "ID\tSTATE\tLOCATION\tCONTENT\tCREATOR")
 			for _, t := range tasks {
 				_, _ = fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\n",
-					t.ID, t.State, truncate(t.Content.Raw, 60), t.Creator.DisplayName, t.CreatedOn)
+					t.ID, t.State, taskLocation(&t), truncate(t.Content.Raw, 60), t.Creator.DisplayName)
 			}
 			return w.Flush()
 		},
@@ -104,6 +104,12 @@ func init() {
 			}
 			if task.Comment != nil {
 				fmt.Printf("Comment:   #%d\n", task.Comment.ID)
+				if loc := taskLocation(task); loc != "" {
+					fmt.Printf("Location:  %s\n", loc)
+				}
+				if task.Comment.Content.Raw != "" {
+					fmt.Printf("Context:   %s\n", truncate(firstLine(task.Comment.Content.Raw), 100))
+				}
 			}
 			return nil
 		},
@@ -303,4 +309,33 @@ func resolveWorkspaceRepoIDAndTaskID(cmd *cobra.Command, args []string) (string,
 		return "", "", "", "", err
 	}
 	return workspace, args[0], args[1], args[2], nil
+}
+
+// taskLocation returns a human-readable location string (e.g. "path/to/file.go:42")
+// if the task is attached to an inline comment, or an empty string otherwise.
+// Multi-line comments are rendered as "path:start-end".
+func taskLocation(t *bitbucket.PRTask) string {
+	if t == nil || t.Comment == nil || t.Comment.Inline == nil {
+		return ""
+	}
+	inline := t.Comment.Inline
+	if inline.Path == "" {
+		return ""
+	}
+	line := 0
+	if inline.To != nil {
+		line = *inline.To
+	}
+	start := 0
+	if inline.StartTo != nil {
+		start = *inline.StartTo
+	}
+	switch {
+	case start > 0 && line > 0 && start != line:
+		return fmt.Sprintf("%s:%d-%d", inline.Path, start, line)
+	case line > 0:
+		return fmt.Sprintf("%s:%d", inline.Path, line)
+	default:
+		return inline.Path
+	}
 }

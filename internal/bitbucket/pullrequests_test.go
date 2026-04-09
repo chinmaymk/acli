@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -661,5 +662,300 @@ func TestListPRActivity(t *testing.T) {
 	}
 	if activities[2].Comment.Content.Raw != "Looks good" {
 		t.Errorf("unexpected comment content: %s", activities[2].Comment.Content.Raw)
+	}
+}
+
+// makeInt returns a pointer to an int literal (test helper).
+func makeInt(n int) *int { return &n }
+
+// makeInline returns an Inline value suitable for a PRComment.
+func makeInline(path string, toLine int) *struct {
+	Path      string `json:"path"`
+	From      *int   `json:"from"`
+	To        *int   `json:"to"`
+	StartFrom *int   `json:"start_from,omitempty"`
+	StartTo   *int   `json:"start_to,omitempty"`
+} {
+	return &struct {
+		Path      string `json:"path"`
+		From      *int   `json:"from"`
+		To        *int   `json:"to"`
+		StartFrom *int   `json:"start_from,omitempty"`
+		StartTo   *int   `json:"start_to,omitempty"`
+	}{
+		Path: path,
+		To:   makeInt(toLine),
+	}
+}
+
+func TestBuildPRReview_FileThreadWithRepliesAndTask(t *testing.T) {
+	rootComment := PRComment{ID: 100}
+	rootComment.Content.Raw = "This function should handle nil input"
+	rootComment.User.DisplayName = "Alice"
+	rootComment.Inline = makeInline("pkg/foo.go", 42)
+
+	reply := PRComment{ID: 101}
+	reply.Content.Raw = "Good point, will fix"
+	reply.User.DisplayName = "Bob"
+	reply.Parent = &struct {
+		ID int `json:"id"`
+	}{ID: 100}
+
+	nestedReply := PRComment{ID: 102}
+	nestedReply.Content.Raw = "Thanks"
+	nestedReply.User.DisplayName = "Alice"
+	nestedReply.Parent = &struct {
+		ID int `json:"id"`
+	}{ID: 101}
+
+	task := PRTask{ID: 5, State: "UNRESOLVED"}
+	task.Content.Raw = "Add nil guard"
+	task.Creator.DisplayName = "Alice"
+	task.Comment = &PRComment{ID: 100}
+
+	review := BuildPRReview(7, []PRComment{rootComment, reply, nestedReply}, []PRTask{task})
+
+	if review.PullRequestID != 7 {
+		t.Errorf("expected PR ID 7, got %d", review.PullRequestID)
+	}
+	if len(review.FileThreads) != 1 {
+		t.Fatalf("expected 1 file thread, got %d", len(review.FileThreads))
+	}
+	if len(review.GeneralThreads) != 0 {
+		t.Errorf("expected 0 general threads, got %d", len(review.GeneralThreads))
+	}
+	thread := review.FileThreads[0]
+	if thread.File != "pkg/foo.go" {
+		t.Errorf("expected file 'pkg/foo.go', got %q", thread.File)
+	}
+	if thread.Line != 42 {
+		t.Errorf("expected line 42, got %d", thread.Line)
+	}
+	if thread.Comment.ID != 100 {
+		t.Errorf("expected root comment ID 100, got %d", thread.Comment.ID)
+	}
+	if len(thread.Replies) != 2 {
+		t.Fatalf("expected 2 replies (direct + nested), got %d", len(thread.Replies))
+	}
+	if thread.Replies[0].ID != 101 || thread.Replies[1].ID != 102 {
+		t.Errorf("unexpected reply order: %+v", thread.Replies)
+	}
+	if len(thread.Tasks) != 1 {
+		t.Fatalf("expected 1 task on thread, got %d", len(thread.Tasks))
+	}
+	if thread.Tasks[0].ID != 5 {
+		t.Errorf("expected task ID 5, got %d", thread.Tasks[0].ID)
+	}
+	if len(review.StandaloneTasks) != 0 {
+		t.Errorf("expected no standalone tasks, got %d", len(review.StandaloneTasks))
+	}
+	if review.Counts.Comments != 3 {
+		t.Errorf("expected 3 comments, got %d", review.Counts.Comments)
+	}
+	if review.Counts.Threads != 1 {
+		t.Errorf("expected 1 thread, got %d", review.Counts.Threads)
+	}
+	if review.Counts.Tasks != 1 {
+		t.Errorf("expected 1 task, got %d", review.Counts.Tasks)
+	}
+	if review.Counts.UnresolvedTasks != 1 {
+		t.Errorf("expected 1 unresolved task, got %d", review.Counts.UnresolvedTasks)
+	}
+	if review.Counts.UnresolvedThreads != 1 {
+		t.Errorf("expected 1 unresolved thread, got %d", review.Counts.UnresolvedThreads)
+	}
+}
+
+func TestBuildPRReview_TaskLinkedToReply(t *testing.T) {
+	// A task attached to a reply comment should still end up on the root thread.
+	root := PRComment{ID: 10}
+	root.Content.Raw = "Please rename this variable"
+	root.Inline = makeInline("main.go", 5)
+
+	reply := PRComment{ID: 11}
+	reply.Content.Raw = "Which name?"
+	reply.Parent = &struct {
+		ID int `json:"id"`
+	}{ID: 10}
+
+	task := PRTask{ID: 99, State: "UNRESOLVED"}
+	task.Content.Raw = "Pick a descriptive name"
+	task.Comment = &PRComment{ID: 11} // attached to reply
+
+	review := BuildPRReview(1, []PRComment{root, reply}, []PRTask{task})
+
+	if len(review.FileThreads) != 1 {
+		t.Fatalf("expected 1 file thread, got %d", len(review.FileThreads))
+	}
+	if len(review.FileThreads[0].Tasks) != 1 {
+		t.Errorf("expected task on thread (via reply), got %d", len(review.FileThreads[0].Tasks))
+	}
+	if len(review.StandaloneTasks) != 0 {
+		t.Errorf("expected no standalone tasks, got %d", len(review.StandaloneTasks))
+	}
+}
+
+func TestBuildPRReview_GeneralAndStandalone(t *testing.T) {
+	generalRoot := PRComment{ID: 1}
+	generalRoot.Content.Raw = "LGTM overall"
+
+	standaloneTask := PRTask{ID: 77, State: "RESOLVED"}
+	standaloneTask.Content.Raw = "Update CHANGELOG"
+	// no Comment field -> standalone
+
+	orphanTask := PRTask{ID: 78, State: "UNRESOLVED"}
+	orphanTask.Content.Raw = "Orphan"
+	orphanTask.Comment = &PRComment{ID: 9999} // not in comment list -> standalone
+
+	review := BuildPRReview(42, []PRComment{generalRoot}, []PRTask{standaloneTask, orphanTask})
+
+	if len(review.GeneralThreads) != 1 {
+		t.Fatalf("expected 1 general thread, got %d", len(review.GeneralThreads))
+	}
+	if len(review.FileThreads) != 0 {
+		t.Errorf("expected 0 file threads, got %d", len(review.FileThreads))
+	}
+	if len(review.StandaloneTasks) != 2 {
+		t.Fatalf("expected 2 standalone tasks, got %d", len(review.StandaloneTasks))
+	}
+	if review.Counts.Tasks != 2 {
+		t.Errorf("expected 2 tasks, got %d", review.Counts.Tasks)
+	}
+	if review.Counts.UnresolvedTasks != 1 {
+		t.Errorf("expected 1 unresolved task (orphan), got %d", review.Counts.UnresolvedTasks)
+	}
+}
+
+func TestBuildPRReview_SkipsDeletedComments(t *testing.T) {
+	deleted := PRComment{ID: 1, Deleted: true}
+	kept := PRComment{ID: 2}
+	kept.Content.Raw = "Real comment"
+
+	review := BuildPRReview(1, []PRComment{deleted, kept}, nil)
+
+	if len(review.GeneralThreads) != 1 {
+		t.Fatalf("expected 1 thread, got %d", len(review.GeneralThreads))
+	}
+	if review.GeneralThreads[0].Comment.ID != 2 {
+		t.Errorf("expected kept comment, got %d", review.GeneralThreads[0].Comment.ID)
+	}
+	if review.Counts.Comments != 1 {
+		t.Errorf("expected 1 comment (deleted excluded), got %d", review.Counts.Comments)
+	}
+}
+
+func TestBuildPRReview_TaskWithInlineComment(t *testing.T) {
+	// Validates that when the Bitbucket API returns a task with the full comment
+	// (which is what it does per the pullrequest_comment_task schema), we can
+	// surface the file/line context without a second call. Note: BuildPRReview
+	// also needs the comment present in the comments list to attach the task
+	// to a thread, so we seed it.
+	c := PRComment{ID: 50}
+	c.Content.Raw = "Nit"
+	c.Inline = makeInline("x.go", 12)
+
+	task := PRTask{ID: 1}
+	task.Content.Raw = "Rename foo to bar"
+	task.Comment = &PRComment{ID: 50, Inline: makeInline("x.go", 12)}
+
+	review := BuildPRReview(1, []PRComment{c}, []PRTask{task})
+	if len(review.FileThreads) != 1 {
+		t.Fatalf("expected 1 file thread, got %d", len(review.FileThreads))
+	}
+	if review.FileThreads[0].File != "x.go" || review.FileThreads[0].Line != 12 {
+		t.Errorf("unexpected thread location: %+v", review.FileThreads[0])
+	}
+	// The task's own Comment field should still carry the inline info.
+	if len(review.FileThreads[0].Tasks) != 1 {
+		t.Fatalf("expected task on thread")
+	}
+	attached := review.FileThreads[0].Tasks[0]
+	if attached.Comment == nil || attached.Comment.Inline == nil || attached.Comment.Inline.Path != "x.go" {
+		t.Errorf("expected task to preserve inline comment context, got %+v", attached.Comment)
+	}
+}
+
+func TestGetPRReview(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/comments"):
+			_, _ = w.Write([]byte(`{"values": [
+				{"id": 1, "content": {"raw": "review comment"}, "user": {"display_name": "A"}, "inline": {"path": "main.go", "to": 10}}
+			]}`))
+		case strings.HasSuffix(r.URL.Path, "/tasks"):
+			_, _ = w.Write([]byte(`{"values": [
+				{"id": 9, "state": "UNRESOLVED", "content": {"raw": "do thing"}, "creator": {"display_name": "A"}, "comment": {"id": 1, "inline": {"path": "main.go", "to": 10}}}
+			]}`))
+		default:
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+
+	c := newRedirectClient(srv)
+	review, err := c.GetPRReview("ws", "repo", 3)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if review.PullRequestID != 3 {
+		t.Errorf("expected PR ID 3, got %d", review.PullRequestID)
+	}
+	if len(review.FileThreads) != 1 {
+		t.Fatalf("expected 1 file thread, got %d", len(review.FileThreads))
+	}
+	if review.FileThreads[0].File != "main.go" || review.FileThreads[0].Line != 10 {
+		t.Errorf("unexpected thread location: %+v", review.FileThreads[0])
+	}
+	if len(review.FileThreads[0].Tasks) != 1 {
+		t.Fatalf("expected task attached to thread, got %d", len(review.FileThreads[0].Tasks))
+	}
+	if review.FileThreads[0].Tasks[0].ID != 9 {
+		t.Errorf("expected task ID 9, got %d", review.FileThreads[0].Tasks[0].ID)
+	}
+}
+
+func TestListPRTasks_DeserializesFullComment(t *testing.T) {
+	// Verify the PRTask struct now parses the full comment object including
+	// inline info, so callers get file/line context for tasks directly.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(PaginatedResponse{
+			Values: json.RawMessage(`[{
+				"id": 1,
+				"state": "UNRESOLVED",
+				"content": {"raw": "Fix tests"},
+				"comment": {
+					"id": 99,
+					"content": {"raw": "broken here"},
+					"inline": {"path": "pkg/a.go", "to": 7}
+				}
+			}]`),
+		})
+	}))
+	defer srv.Close()
+
+	c := newRedirectClient(srv)
+	tasks, err := c.ListPRTasks("ws", "repo", 1, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(tasks) != 1 {
+		t.Fatalf("expected 1 task, got %d", len(tasks))
+	}
+	if tasks[0].Comment == nil {
+		t.Fatal("expected task.Comment to be populated")
+	}
+	if tasks[0].Comment.ID != 99 {
+		t.Errorf("expected comment ID 99, got %d", tasks[0].Comment.ID)
+	}
+	if tasks[0].Comment.Inline == nil {
+		t.Fatal("expected task.Comment.Inline to be populated")
+	}
+	if tasks[0].Comment.Inline.Path != "pkg/a.go" {
+		t.Errorf("expected inline path 'pkg/a.go', got %q", tasks[0].Comment.Inline.Path)
+	}
+	if tasks[0].Comment.Inline.To == nil || *tasks[0].Comment.Inline.To != 7 {
+		t.Errorf("expected inline 'to' 7, got %+v", tasks[0].Comment.Inline.To)
 	}
 }

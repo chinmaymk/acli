@@ -2,8 +2,10 @@ package acli
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"strconv"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/chinmaymk/acli/internal/bitbucket"
@@ -307,7 +309,12 @@ func init() {
 	prCommentsCmd := &cobra.Command{
 		Use:   "comments [workspace] <repo-slug> <pr-id>",
 		Short: "List comments on a pull request",
-		Args:  cobra.RangeArgs(2, 3),
+		Long: `List comments on a pull request.
+
+Each comment is shown with its ID, author, file/line anchor (for inline
+comments), and parent comment ID (for replies). Use 'pr review' to see
+comments grouped into threads with their linked tasks.`,
+		Args: cobra.RangeArgs(2, 3),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			workspace, repoSlug, idStr, err := resolveWorkspaceRepoAndID(cmd, args)
 			if err != nil {
@@ -332,9 +339,16 @@ func init() {
 			}
 
 			for _, c := range comments {
-				fmt.Printf("#%d by %s (%s)\n", c.ID, c.User.DisplayName, c.CreatedOn)
+				header := fmt.Sprintf("#%d by %s (%s)", c.ID, c.User.DisplayName, c.CreatedOn)
+				if c.Parent != nil {
+					header += fmt.Sprintf(" reply-to:#%d", c.Parent.ID)
+				}
+				if c.Resolution != nil {
+					header += " [RESOLVED]"
+				}
+				fmt.Println(header)
 				if c.Inline != nil {
-					fmt.Printf("  File: %s\n", c.Inline.Path)
+					fmt.Printf("  Location: %s\n", commentLocation(&c))
 				}
 				fmt.Printf("  %s\n\n", c.Content.Raw)
 			}
@@ -343,6 +357,51 @@ func init() {
 	}
 	addBBPaginationFlags(prCommentsCmd)
 	bbPRCmd.AddCommand(prCommentsCmd)
+
+	// pr review - joined view of comments + tasks
+	prReviewCmd := &cobra.Command{
+		Use:   "review [workspace] <repo-slug> <pr-id>",
+		Short: "Show all PR feedback (comments + tasks) grouped into threads",
+		Long: `Fetches all comments and tasks on a pull request in one call and joins
+them into a structured review:
+
+  - File threads: top-level inline comments grouped by file and line, with
+    their replies and any tasks linked to the thread.
+  - General threads: top-level non-inline comments, with replies and tasks.
+  - Standalone tasks: tasks not linked to any comment.
+
+This is the recommended command for coding agents that need the full picture
+of reviewer feedback with correct associations between comments, replies, and
+tasks. Use --output json for a machine-readable payload.`,
+		Args: cobra.RangeArgs(2, 3),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			workspace, repoSlug, idStr, err := resolveWorkspaceRepoAndID(cmd, args)
+			if err != nil {
+				return err
+			}
+			prID, err := strconv.Atoi(idStr)
+			if err != nil {
+				return fmt.Errorf("invalid PR ID: %s", idStr)
+			}
+			client, err := getBitbucketClient(cmd)
+			if err != nil {
+				return err
+			}
+
+			review, err := client.GetPRReview(workspace, repoSlug, prID)
+			if err != nil {
+				return err
+			}
+
+			if isJSONOutput(cmd) {
+				return outputJSON(review)
+			}
+
+			printPRReview(cmd, review)
+			return nil
+		},
+	}
+	bbPRCmd.AddCommand(prReviewCmd)
 
 	// pr comment (add a comment)
 	prCommentCmd := &cobra.Command{
@@ -573,4 +632,108 @@ func init() {
 	}
 	addBBPaginationFlags(prActivityCmd)
 	bbPRCmd.AddCommand(prActivityCmd)
+}
+
+// commentLocation returns a human-readable location string for an inline
+// comment (e.g. "path/to/file.go:42"). Multi-line comments render as
+// "path:start-end". Returns an empty string if the comment is not inline.
+func commentLocation(c *bitbucket.PRComment) string {
+	if c == nil || c.Inline == nil || c.Inline.Path == "" {
+		return ""
+	}
+	line := 0
+	if c.Inline.To != nil {
+		line = *c.Inline.To
+	}
+	start := 0
+	if c.Inline.StartTo != nil {
+		start = *c.Inline.StartTo
+	}
+	switch {
+	case start > 0 && line > 0 && start != line:
+		return fmt.Sprintf("%s:%d-%d", c.Inline.Path, start, line)
+	case line > 0:
+		return fmt.Sprintf("%s:%d", c.Inline.Path, line)
+	default:
+		return c.Inline.Path
+	}
+}
+
+// printPRReview prints a human-readable rendering of a PRReview.
+func printPRReview(cmd *cobra.Command, review *bitbucket.PRReview) {
+	out := cmd.OutOrStdout()
+
+	_, _ = fmt.Fprintf(out, "PR #%d review: %d threads, %d comments, %d tasks (%d unresolved)\n\n",
+		review.PullRequestID,
+		review.Counts.Threads,
+		review.Counts.Comments,
+		review.Counts.Tasks,
+		review.Counts.UnresolvedTasks,
+	)
+
+	if len(review.FileThreads) > 0 {
+		_, _ = fmt.Fprintln(out, "== File threads ==")
+		for i := range review.FileThreads {
+			printReviewThread(out, &review.FileThreads[i])
+		}
+	}
+
+	if len(review.GeneralThreads) > 0 {
+		_, _ = fmt.Fprintln(out, "== General threads ==")
+		for i := range review.GeneralThreads {
+			printReviewThread(out, &review.GeneralThreads[i])
+		}
+	}
+
+	if len(review.StandaloneTasks) > 0 {
+		_, _ = fmt.Fprintln(out, "== Standalone tasks ==")
+		for _, t := range review.StandaloneTasks {
+			_, _ = fmt.Fprintf(out, "  [task #%d %s] %s — %s\n",
+				t.ID, t.State, t.Creator.DisplayName, t.Content.Raw)
+		}
+		_, _ = fmt.Fprintln(out)
+	}
+}
+
+func printReviewThread(out io.Writer, t *bitbucket.PRReviewThread) {
+	loc := commentLocation(&t.Comment)
+	if loc == "" {
+		loc = "(general)"
+	}
+	resolution := ""
+	if t.Comment.Resolution != nil {
+		resolution = " [RESOLVED]"
+	}
+	_, _ = fmt.Fprintf(out, "\n-- %s --%s\n", loc, resolution)
+	_, _ = fmt.Fprintf(out, "  #%d by %s (%s)\n", t.Comment.ID, t.Comment.User.DisplayName, t.Comment.CreatedOn)
+	_, _ = fmt.Fprintf(out, "    %s\n", indent(t.Comment.Content.Raw, "    "))
+
+	for _, r := range t.Replies {
+		_, _ = fmt.Fprintf(out, "  ↳ #%d by %s (%s)\n", r.ID, r.User.DisplayName, r.CreatedOn)
+		_, _ = fmt.Fprintf(out, "    %s\n", indent(r.Content.Raw, "    "))
+	}
+
+	for _, task := range t.Tasks {
+		_, _ = fmt.Fprintf(out, "  ☑ task #%d [%s] by %s: %s\n",
+			task.ID, task.State, task.Creator.DisplayName, task.Content.Raw)
+	}
+}
+
+// indent prepends `prefix` to each subsequent line of s.
+func indent(s, prefix string) string {
+	if s == "" {
+		return s
+	}
+	// Replace each newline with newline+prefix so every continuation line is aligned.
+	out := ""
+	first := true
+	for _, line := range strings.Split(s, "\n") {
+		if first {
+			out = line
+			first = false
+			continue
+		}
+		out += "\n" + prefix + line
+	}
+	return out
 }

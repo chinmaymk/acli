@@ -449,10 +449,17 @@ func (c *Client) GetPRDiff(workspace, repoSlug string, prID int) (string, error)
 
 // PR Task types and methods
 
+// PRTask represents a task on a pull request.
+//
+// When a task is linked to a comment — which is how Bitbucket attaches tasks to
+// a specific file/line for code review — the Comment field contains the full
+// comment object, including its Inline location (path, line number) if any.
+// Coding agents can use Comment.Inline to know where a task applies in the diff
+// without making an extra API call.
 type PRTask struct {
-	ID        int    `json:"id"`
-	State     string `json:"state"`
-	Content   struct {
+	ID      int `json:"id"`
+	State   string `json:"state"`
+	Content struct {
 		Raw    string `json:"raw"`
 		Markup string `json:"markup"`
 		HTML   string `json:"html"`
@@ -460,6 +467,7 @@ type PRTask struct {
 	Creator struct {
 		DisplayName string `json:"display_name"`
 		UUID        string `json:"uuid"`
+		Nickname    string `json:"nickname,omitempty"`
 	} `json:"creator"`
 	CreatedOn  string `json:"created_on"`
 	UpdatedOn  string `json:"updated_on"`
@@ -468,9 +476,15 @@ type PRTask struct {
 		DisplayName string `json:"display_name"`
 		UUID        string `json:"uuid"`
 	} `json:"resolved_by,omitempty"`
-	Comment *struct {
-		ID int `json:"id"`
-	} `json:"comment,omitempty"`
+	// Comment is the comment this task is attached to, or nil for a standalone
+	// PR-level task. When set, Comment.Inline (if non-nil) gives the file path
+	// and line number the task applies to.
+	Comment *PRComment `json:"comment,omitempty"`
+	Links   struct {
+		HTML struct {
+			Href string `json:"href"`
+		} `json:"html"`
+	} `json:"links,omitempty"`
 }
 
 func (c *Client) ListPRTasks(workspace, repoSlug string, prID int, opts *PaginationOptions) ([]PRTask, error) {
@@ -829,4 +843,206 @@ func (c *Client) ListPRActivity(workspace, repoSlug string, prID int, opts *Pagi
 		return nil, fmt.Errorf("parsing activity: %w", err)
 	}
 	return activities, nil
+}
+
+// PR Review: joined view of comments and tasks
+
+// PRReviewThread represents a single thread of feedback on a pull request.
+//
+// A thread is rooted at a top-level comment (Comment.Parent is nil). Replies
+// to that comment are in Replies (flattened in chronological order). Any tasks
+// linked to the root or to any of its replies are collected in Tasks. If the
+// root comment is an inline comment, File/Line/StartLine describe the code
+// location the thread is anchored to.
+type PRReviewThread struct {
+	// File is the path the thread is anchored to, empty for general (non-inline) threads.
+	File string `json:"file,omitempty"`
+	// Line is the line number in the new version of the file the thread is
+	// anchored to (for multi-line comments this is the ending line).
+	Line int `json:"line,omitempty"`
+	// StartLine is the starting line for multi-line comments, 0 if single-line.
+	StartLine int `json:"start_line,omitempty"`
+	// Comment is the root (top-level) comment of the thread.
+	Comment PRComment `json:"comment"`
+	// Replies are non-root comments that chain under Comment, in chronological order.
+	Replies []PRComment `json:"replies,omitempty"`
+	// Tasks are tasks linked to the root comment or any of its replies.
+	Tasks []PRTask `json:"tasks,omitempty"`
+}
+
+// PRReview is a consolidated view of all feedback on a pull request, joining
+// comments and tasks with correct associations. Coding agents can consume this
+// as a single payload rather than manually cross-referencing the comment and
+// task list endpoints.
+type PRReview struct {
+	PullRequestID int `json:"pull_request_id"`
+	// FileThreads are threads anchored to a specific file/line, grouped by file path.
+	FileThreads []PRReviewThread `json:"file_threads,omitempty"`
+	// GeneralThreads are top-level PR discussion threads not anchored to any file.
+	GeneralThreads []PRReviewThread `json:"general_threads,omitempty"`
+	// StandaloneTasks are tasks that are not linked to any comment (or whose
+	// linked comment could not be found, e.g. deleted).
+	StandaloneTasks []PRTask `json:"standalone_tasks,omitempty"`
+	// Counts is a quick summary useful for agents deciding whether to act.
+	Counts PRReviewCounts `json:"counts"`
+}
+
+// PRReviewCounts summarises the feedback on a pull request.
+type PRReviewCounts struct {
+	Comments         int `json:"comments"`          // total non-deleted comments (roots + replies)
+	Threads          int `json:"threads"`           // total threads (file + general)
+	Tasks            int `json:"tasks"`             // total tasks (linked + standalone)
+	UnresolvedTasks  int `json:"unresolved_tasks"`  // tasks with state != RESOLVED
+	UnresolvedThreads int `json:"unresolved_threads"` // threads whose root comment has no resolution
+}
+
+// GetPRReview fetches all comments and tasks on a pull request and returns a
+// joined view: threads (rooted at top-level comments, with replies) with any
+// linked tasks attached to the thread. This is the recommended way to retrieve
+// PR feedback with correct associations.
+func (c *Client) GetPRReview(workspace, repoSlug string, prID int) (*PRReview, error) {
+	comments, err := c.ListPRComments(workspace, repoSlug, prID, &PaginationOptions{All: true})
+	if err != nil {
+		return nil, fmt.Errorf("listing comments: %w", err)
+	}
+	tasks, err := c.ListPRTasks(workspace, repoSlug, prID, &PaginationOptions{All: true})
+	if err != nil {
+		return nil, fmt.Errorf("listing tasks: %w", err)
+	}
+	return BuildPRReview(prID, comments, tasks), nil
+}
+
+// BuildPRReview joins comments and tasks into a structured review. It is
+// exported so callers that already have comments/tasks (e.g. from a cached
+// response or a test) can assemble the review without another API round-trip.
+//
+// Association rules:
+//   - A top-level comment (Parent == nil) starts a new thread. If its Inline
+//     field is set, the thread is a "file thread" for that path+line,
+//     otherwise it is a "general thread".
+//   - A non-root comment is attached as a reply to the thread whose root is
+//     the transitive parent of that comment.
+//   - A task is attached to the thread of its linked comment's root. If the
+//     task has no linked comment, or the linked comment is not present in the
+//     given comments slice, the task is added to StandaloneTasks.
+func BuildPRReview(prID int, comments []PRComment, tasks []PRTask) *PRReview {
+	review := &PRReview{PullRequestID: prID}
+
+	// Index comments by id and find the root of each comment.
+	byID := make(map[int]*PRComment, len(comments))
+	for i := range comments {
+		byID[comments[i].ID] = &comments[i]
+	}
+
+	// rootOf walks the parent chain until it finds a comment with no parent.
+	// Returns nil if the chain is broken (parent not in byID).
+	rootOf := func(c *PRComment) *PRComment {
+		cur := c
+		// Cap the walk to guard against pathological cycles.
+		for i := 0; cur != nil && cur.Parent != nil && i < 1000; i++ {
+			next, ok := byID[cur.Parent.ID]
+			if !ok {
+				return nil
+			}
+			cur = next
+		}
+		return cur
+	}
+
+	// Build threads keyed by root comment ID, preserving order of first appearance.
+	threadByRoot := make(map[int]*PRReviewThread)
+	var rootOrder []int
+	for i := range comments {
+		c := &comments[i]
+		if c.Parent != nil || c.Deleted {
+			continue
+		}
+		t := &PRReviewThread{Comment: *c}
+		if c.Inline != nil {
+			t.File = c.Inline.Path
+			if c.Inline.To != nil {
+				t.Line = *c.Inline.To
+			}
+			if c.Inline.StartTo != nil {
+				t.StartLine = *c.Inline.StartTo
+			}
+		}
+		threadByRoot[c.ID] = t
+		rootOrder = append(rootOrder, c.ID)
+	}
+
+	// Attach replies to their root thread.
+	for i := range comments {
+		c := &comments[i]
+		if c.Parent == nil || c.Deleted {
+			continue
+		}
+		root := rootOf(c)
+		if root == nil {
+			continue
+		}
+		if t, ok := threadByRoot[root.ID]; ok {
+			t.Replies = append(t.Replies, *c)
+		}
+	}
+
+	// Attach tasks to their thread (by linked comment's root), or to standalone.
+	for i := range tasks {
+		task := tasks[i]
+		if task.Comment == nil {
+			review.StandaloneTasks = append(review.StandaloneTasks, task)
+			continue
+		}
+		linked, ok := byID[task.Comment.ID]
+		if !ok {
+			review.StandaloneTasks = append(review.StandaloneTasks, task)
+			continue
+		}
+		root := rootOf(linked)
+		if root == nil {
+			review.StandaloneTasks = append(review.StandaloneTasks, task)
+			continue
+		}
+		if t, ok := threadByRoot[root.ID]; ok {
+			t.Tasks = append(t.Tasks, task)
+		} else {
+			review.StandaloneTasks = append(review.StandaloneTasks, task)
+		}
+	}
+
+	// Split into file vs general threads preserving original order.
+	for _, id := range rootOrder {
+		t := threadByRoot[id]
+		if t.File != "" {
+			review.FileThreads = append(review.FileThreads, *t)
+		} else {
+			review.GeneralThreads = append(review.GeneralThreads, *t)
+		}
+	}
+
+	// Counts summary
+	for _, c := range comments {
+		if !c.Deleted {
+			review.Counts.Comments++
+		}
+	}
+	review.Counts.Threads = len(review.FileThreads) + len(review.GeneralThreads)
+	review.Counts.Tasks = len(tasks)
+	for _, t := range tasks {
+		if t.State != "RESOLVED" {
+			review.Counts.UnresolvedTasks++
+		}
+	}
+	for _, th := range review.FileThreads {
+		if th.Comment.Resolution == nil {
+			review.Counts.UnresolvedThreads++
+		}
+	}
+	for _, th := range review.GeneralThreads {
+		if th.Comment.Resolution == nil {
+			review.Counts.UnresolvedThreads++
+		}
+	}
+
+	return review
 }
