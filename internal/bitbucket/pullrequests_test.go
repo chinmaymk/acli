@@ -326,6 +326,42 @@ func TestCreatePRCommentInline(t *testing.T) {
 	}
 }
 
+func TestReplyToPRComment(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("expected POST, got %s", r.Method)
+		}
+		var body map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decoding body: %v", err)
+		}
+		parent, ok := body["parent"].(map[string]interface{})
+		if !ok {
+			t.Fatalf("expected parent object in body, got %v", body["parent"])
+		}
+		// JSON numbers decode into float64 by default.
+		if id, _ := parent["id"].(float64); int(id) != 55 {
+			t.Errorf("expected parent.id=55, got %v", parent["id"])
+		}
+		content, ok := body["content"].(map[string]interface{})
+		if !ok || content["raw"] != "Thanks!" {
+			t.Errorf("unexpected content payload: %v", body["content"])
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(PRComment{ID: 103})
+	}))
+	defer srv.Close()
+
+	c := newRedirectClient(srv)
+	comment, err := c.ReplyToPRComment("ws", "repo", 1, 55, "Thanks!")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if comment.ID != 103 {
+		t.Errorf("unexpected comment ID: %d", comment.ID)
+	}
+}
+
 func TestGetPRDiff(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("diff --git a/file.go b/file.go"))

@@ -420,6 +420,24 @@ func (c *Client) CreatePRCommentInline(workspace, repoSlug string, prID int, con
 			"to":   inline.To,
 		}
 	}
+	return c.postPRComment(workspace, repoSlug, prID, body)
+}
+
+// ReplyToPRComment posts a reply to an existing pull request comment by
+// setting the parent.id field on a new comment.
+func (c *Client) ReplyToPRComment(workspace, repoSlug string, prID, parentID int, content string) (*PRComment, error) {
+	body := map[string]interface{}{
+		"content": map[string]string{
+			"raw": content,
+		},
+		"parent": map[string]interface{}{
+			"id": parentID,
+		},
+	}
+	return c.postPRComment(workspace, repoSlug, prID, body)
+}
+
+func (c *Client) postPRComment(workspace, repoSlug string, prID int, body map[string]interface{}) (*PRComment, error) {
 	jsonBody, err := json.Marshal(body)
 	if err != nil {
 		return nil, err

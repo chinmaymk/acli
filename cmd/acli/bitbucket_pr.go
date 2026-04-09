@@ -348,7 +348,10 @@ func init() {
 	prCommentCmd := &cobra.Command{
 		Use:   "comment [workspace] <repo-slug> <pr-id>",
 		Short: "Add a comment to a pull request",
-		Args:  cobra.RangeArgs(2, 3),
+		Long: "Add a comment to a pull request. Use --file and --line to post " +
+			"an inline comment on a specific line. Use --reply-to to reply to an " +
+			"existing comment (the reply inherits its inline location from the parent).",
+		Args: cobra.RangeArgs(2, 3),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			workspace, repoSlug, idStr, err := resolveWorkspaceRepoAndID(cmd, args)
 			if err != nil {
@@ -370,12 +373,24 @@ func init() {
 
 			filePath, _ := cmd.Flags().GetString("file")
 			line, _ := cmd.Flags().GetInt("line")
+			replyTo, _ := cmd.Flags().GetInt("reply-to")
 
+			if replyTo != 0 && (filePath != "" || line != 0) {
+				return fmt.Errorf("--reply-to cannot be combined with --file/--line; replies inherit the parent's inline location")
+			}
 			if filePath != "" && line == 0 {
 				return fmt.Errorf("--line is required when --file is specified")
 			}
 			if line != 0 && filePath == "" {
 				return fmt.Errorf("--file is required when --line is specified")
+			}
+
+			if replyTo != 0 {
+				comment, err := client.ReplyToPRComment(workspace, repoSlug, prID, replyTo, body)
+				if err != nil {
+					return err
+				}
+				return outputResult(cmd, "created", fmt.Sprintf("%d", comment.ID), fmt.Sprintf("Replied to comment #%d on PR #%d (new comment #%d)", replyTo, prID, comment.ID), comment)
 			}
 
 			var inline *bitbucket.InlineCommentParams
@@ -396,6 +411,7 @@ func init() {
 	prCommentCmd.Flags().String("body", "", "Comment body (required)")
 	prCommentCmd.Flags().String("file", "", "File path for an inline comment")
 	prCommentCmd.Flags().Int("line", 0, "Line number in the new version of the file (requires --file)")
+	prCommentCmd.Flags().Int("reply-to", 0, "Parent comment ID to reply to")
 	bbPRCmd.AddCommand(prCommentCmd)
 
 	// pr diff
