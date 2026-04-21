@@ -91,6 +91,53 @@ func TestPrintIssueRowWithAllFields(t *testing.T) {
 	w.Flush()
 }
 
+func TestIssueColumnFor(t *testing.T) {
+	issue := jira.IssueDetailed{
+		Key: "TEST-1",
+		Fields: jira.IssueFields{
+			Summary:   "A summary",
+			IssueType: &jira.IssueType{Name: "Bug"},
+			Status:    &jira.StatusDetails{Name: "Open"},
+			Priority:  &jira.Priority{Name: "High"},
+			Assignee:  &jira.UserDetails{DisplayName: "Alice"},
+			Labels:    []string{"a", "b"},
+		},
+	}
+
+	tests := []struct {
+		field      string
+		wantHeader string
+		wantValue  string
+	}{
+		{"summary", "SUMMARY", "A summary"},
+		{"type", "TYPE", "Bug"},
+		{"issuetype", "TYPE", "Bug"},
+		{"status", "STATUS", "Open"},
+		{"priority", "PRIORITY", "High"},
+		{"assignee", "ASSIGNEE", "Alice"},
+		{"labels", "LABELS", "a,b"},
+		{"unknowncustom", "UNKNOWNCUSTOM", ""},
+	}
+
+	for _, tt := range tests {
+		col := issueColumnFor(tt.field)
+		if col.header != tt.wantHeader {
+			t.Errorf("issueColumnFor(%q).header = %q, want %q", tt.field, col.header, tt.wantHeader)
+		}
+		if got := col.extract(issue); got != tt.wantValue {
+			t.Errorf("issueColumnFor(%q).extract = %q, want %q", tt.field, got, tt.wantValue)
+		}
+	}
+
+	// Verify nil-safe extractors don't panic on an issue with no parsed fields.
+	bare := jira.IssueDetailed{Key: "X-1"}
+	for _, f := range []string{"type", "status", "priority", "assignee", "reporter", "creator", "resolution", "project"} {
+		if got := issueColumnFor(f).extract(bare); got != "" {
+			t.Errorf("issueColumnFor(%q).extract on bare issue = %q, want empty", f, got)
+		}
+	}
+}
+
 func TestMaskToken(t *testing.T) {
 	tests := []struct {
 		input string

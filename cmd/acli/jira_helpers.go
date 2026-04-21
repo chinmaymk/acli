@@ -3,6 +3,7 @@ package acli
 import (
 	"fmt"
 	"os"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/chinmaymk/acli/internal/bitbucket"
@@ -151,4 +152,114 @@ func printIssueRow(w *tabwriter.Writer, issue jira.IssueDetailed) {
 	}
 	_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
 		issue.Key, issueType, status, priority, assignee, issue.Fields.Summary)
+}
+
+// issueColumn describes a table column for a given Jira field.
+type issueColumn struct {
+	header  string
+	extract func(jira.IssueDetailed) string
+}
+
+// issueColumnFor returns the column definition for a Jira field name.
+// Unknown fields fall back to an uppercased header with an empty value
+// (the custom field data isn't parsed into IssueFields).
+func issueColumnFor(field string) issueColumn {
+	switch strings.ToLower(field) {
+	case "summary":
+		return issueColumn{"SUMMARY", func(i jira.IssueDetailed) string { return i.Fields.Summary }}
+	case "issuetype", "type":
+		return issueColumn{"TYPE", func(i jira.IssueDetailed) string {
+			if i.Fields.IssueType == nil {
+				return ""
+			}
+			return i.Fields.IssueType.Name
+		}}
+	case "status":
+		return issueColumn{"STATUS", func(i jira.IssueDetailed) string {
+			if i.Fields.Status == nil {
+				return ""
+			}
+			return i.Fields.Status.Name
+		}}
+	case "priority":
+		return issueColumn{"PRIORITY", func(i jira.IssueDetailed) string {
+			if i.Fields.Priority == nil {
+				return ""
+			}
+			return i.Fields.Priority.Name
+		}}
+	case "assignee":
+		return issueColumn{"ASSIGNEE", func(i jira.IssueDetailed) string {
+			if i.Fields.Assignee == nil {
+				return ""
+			}
+			return i.Fields.Assignee.DisplayName
+		}}
+	case "reporter":
+		return issueColumn{"REPORTER", func(i jira.IssueDetailed) string {
+			if i.Fields.Reporter == nil {
+				return ""
+			}
+			return i.Fields.Reporter.DisplayName
+		}}
+	case "creator":
+		return issueColumn{"CREATOR", func(i jira.IssueDetailed) string {
+			if i.Fields.Creator == nil {
+				return ""
+			}
+			return i.Fields.Creator.DisplayName
+		}}
+	case "resolution":
+		return issueColumn{"RESOLUTION", func(i jira.IssueDetailed) string {
+			if i.Fields.Resolution == nil {
+				return ""
+			}
+			return i.Fields.Resolution.Name
+		}}
+	case "project":
+		return issueColumn{"PROJECT", func(i jira.IssueDetailed) string {
+			if i.Fields.Project == nil {
+				return ""
+			}
+			return i.Fields.Project.Key
+		}}
+	case "labels":
+		return issueColumn{"LABELS", func(i jira.IssueDetailed) string {
+			return strings.Join(i.Fields.Labels, ",")
+		}}
+	case "created":
+		return issueColumn{"CREATED", func(i jira.IssueDetailed) string { return i.Fields.Created }}
+	case "updated":
+		return issueColumn{"UPDATED", func(i jira.IssueDetailed) string { return i.Fields.Updated }}
+	case "duedate":
+		return issueColumn{"DUE DATE", func(i jira.IssueDetailed) string { return i.Fields.DueDate }}
+	}
+	return issueColumn{strings.ToUpper(field), func(jira.IssueDetailed) string { return "" }}
+}
+
+// printIssueTable renders a tabular view of search results using only the
+// requested fields as columns. KEY is always the leading column.
+func printIssueTable(issues []jira.IssueDetailed, fields []string) {
+	cols := []issueColumn{{"KEY", func(i jira.IssueDetailed) string { return i.Key }}}
+	for _, f := range fields {
+		if strings.EqualFold(f, "key") {
+			continue
+		}
+		cols = append(cols, issueColumnFor(f))
+	}
+
+	w := newTabWriter()
+	headers := make([]string, len(cols))
+	for i, c := range cols {
+		headers[i] = c.header
+	}
+	_, _ = fmt.Fprintln(w, strings.Join(headers, "\t"))
+	for _, issue := range issues {
+		row := make([]string, len(cols))
+		for i, c := range cols {
+			row[i] = c.extract(issue)
+		}
+		_, _ = fmt.Fprintln(w, strings.Join(row, "\t"))
+	}
+	_ = w.Flush()
 }

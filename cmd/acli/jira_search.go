@@ -25,6 +25,10 @@ var jiraSearchCmd = &cobra.Command{
 		fields, _ := cmd.Flags().GetStringSlice("fields")
 		all, _ := cmd.Flags().GetBool("all")
 
+		if len(fields) == 0 {
+			fields = []string{"summary"}
+		}
+
 		results, err := client.SearchJQL(jql, startAt, maxResults, fields, nil)
 		if err != nil {
 			return err
@@ -47,12 +51,7 @@ var jiraSearchCmd = &cobra.Command{
 			return outputJSON(results)
 		}
 
-		w := newTabWriter()
-		_, _ = fmt.Fprintln(w, "KEY\tTYPE\tSTATUS\tPRIORITY\tASSIGNEE\tSUMMARY")
-		for _, issue := range results.Issues {
-			printIssueRow(w, issue)
-		}
-		_ = w.Flush()
+		printIssueTable(results.Issues, fields)
 		printPaginationHint(cmd, len(results.Issues), results.Total)
 		return nil
 	},
