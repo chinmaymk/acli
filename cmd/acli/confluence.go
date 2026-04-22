@@ -180,6 +180,7 @@ func init() {
 	confluenceCmd.AddCommand(confClassificationCmd)
 	confluenceCmd.AddCommand(confUserCmd)
 	confluenceCmd.AddCommand(confSpaceRoleCmd)
+	confluenceCmd.AddCommand(confSearchCmd)
 
 	confCommentCmd.AddCommand(confFooterCommentCmd)
 	confCommentCmd.AddCommand(confInlineCommentCmd)
