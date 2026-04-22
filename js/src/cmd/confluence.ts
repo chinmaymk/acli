@@ -1,5 +1,5 @@
 import { getConfluenceClient } from './helpers.js';
-import { confluenceV2 } from '../internal/api/client.js';
+import { confluenceV2, confluenceV1 } from '../internal/api/client.js';
 import type { ConfluenceClient } from '../internal/api/client.js';
 import type { Argv, ArgumentsCamelCase } from 'yargs';
 import type { JsonBody, JsonValue } from '../internal/types.js';
@@ -3124,6 +3124,56 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
               .demandCommand(1, 'Specify an app-property subcommand');
           },
           () => {}
+        )
+
+        // ----------------------------------------------------------------
+        // search (CQL)
+        // ----------------------------------------------------------------
+        .command(
+          ['search', 's'],
+          'Search content using CQL',
+          (yargs: Argv) => {
+            return yargs
+              .option('cql', { type: 'string', demandOption: true, describe: 'CQL query' })
+              .option('limit', { type: 'number', default: 25, describe: 'Maximum results per page' })
+              .option('start', { type: 'number', default: 0, describe: 'Offset for pagination' })
+              .option('expand', { type: 'string', default: '', describe: 'Comma-separated properties to expand' })
+              .option('all', { type: 'boolean', default: false, describe: 'Fetch all results, overriding --limit and --start' });
+          },
+          async (argv: ArgumentsCamelCase<ConfluenceArgv & {
+            cql: string; limit: number; start: number; expand: string; all: boolean;
+          }>) => {
+            const client = getConfluenceClient(argv);
+
+            const query: Record<string, string> = {
+              cql: argv.cql,
+              limit: String(argv.limit),
+              start: String(argv.start),
+            };
+            if (argv.expand) query['expand'] = argv.expand;
+
+            const firstPage = await confluenceV1<JsonValue>(client, 'GET', '/content/search', query);
+
+            if (!argv.all) {
+              printJSON(firstPage);
+              return;
+            }
+
+            const fp = firstPage as { results: JsonValue[]; size: number; totalSize: number };
+            const combined: JsonValue[] = [...fp.results];
+            let nextStart = argv.start + fp.size;
+
+            while (fp.size > 0 && combined.length < fp.totalSize) {
+              query['start'] = String(nextStart);
+              const nextPage = await confluenceV1<JsonValue>(client, 'GET', '/content/search', query);
+              const np = nextPage as { results: JsonValue[]; size: number };
+              if (!np.results || np.results.length === 0) break;
+              combined.push(...np.results);
+              nextStart += np.size;
+            }
+
+            printJSON({ results: combined, totalSize: fp.totalSize, size: combined.length });
+          }
         )
 
         .demandCommand(1, 'Specify a confluence subcommand');
