@@ -3138,7 +3138,7 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
               .option('limit', { type: 'number', default: 25, describe: 'Maximum results per page' })
               .option('start', { type: 'number', default: 0, describe: 'Offset for pagination' })
               .option('expand', { type: 'string', default: '', describe: 'Comma-separated properties to expand' })
-              .option('all', { type: 'boolean', default: false, describe: 'Fetch all results, overriding --limit and --start' });
+              .option('all', { type: 'boolean', default: false, describe: 'Fetch all results starting from --start, using --limit as the page size' });
           },
           async (argv: ArgumentsCamelCase<ConfluenceArgv & {
             cql: string; limit: number; start: number; expand: string; all: boolean;
@@ -3159,20 +3159,42 @@ export function registerConfluenceCommands(yargs: Argv): Argv {
               return;
             }
 
-            const fp = firstPage as { results: JsonValue[]; size: number; totalSize: number };
-            const combined: JsonValue[] = [...fp.results];
-            let nextStart = argv.start + fp.size;
+            type ConfluenceSearchPage = { results: JsonValue[]; size: number; totalSize: number };
+            const isSearchPage = (v: JsonValue): v is ConfluenceSearchPage =>
+              typeof v === 'object' &&
+              v !== null &&
+              Array.isArray((v as Record<string, unknown>).results) &&
+              typeof (v as Record<string, unknown>).size === 'number' &&
+              typeof (v as Record<string, unknown>).totalSize === 'number';
 
-            while (fp.size > 0 && combined.length < fp.totalSize) {
-              query['start'] = String(nextStart);
-              const nextPage = await confluenceV1<JsonValue>(client, 'GET', '/content/search', query);
-              const np = nextPage as { results: JsonValue[]; size: number };
-              if (!np.results || np.results.length === 0) break;
-              combined.push(...np.results);
-              nextStart += np.size;
+            if (!isSearchPage(firstPage)) {
+              printJSON(firstPage);
+              return;
             }
 
-            printJSON({ results: combined, totalSize: fp.totalSize, size: combined.length });
+            const combined: JsonValue[] = [...firstPage.results];
+            let pageSize = firstPage.size;
+            let nextStart = argv.start + pageSize;
+
+            while (pageSize > 0 && combined.length < firstPage.totalSize) {
+              const currentStart = nextStart;
+              query['start'] = String(currentStart);
+              const nextPage = await confluenceV1<JsonValue>(client, 'GET', '/content/search', query);
+              const results =
+                typeof nextPage === 'object' && nextPage !== null && Array.isArray((nextPage as Record<string, unknown>).results)
+                  ? ((nextPage as Record<string, unknown>).results as JsonValue[])
+                  : [];
+              pageSize =
+                typeof nextPage === 'object' && nextPage !== null && typeof (nextPage as Record<string, unknown>).size === 'number'
+                  ? ((nextPage as Record<string, unknown>).size as number)
+                  : results.length;
+              if (results.length === 0 || pageSize <= 0) break;
+              combined.push(...results);
+              nextStart = currentStart + pageSize;
+              if (nextStart <= currentStart) break;
+            }
+
+            printJSON({ results: combined, totalSize: firstPage.totalSize, size: combined.length });
           }
         )
 
