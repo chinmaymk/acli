@@ -77,7 +77,7 @@ Examples:
 			}
 			var nextPage pageResults
 			if err := json.Unmarshal(nextRaw, &nextPage); err != nil {
-				break
+				return fmt.Errorf("parsing paginated search response at start=%d: %w", nextStart, err)
 			}
 			if len(nextPage.Results) == 0 {
 				break
@@ -86,7 +86,19 @@ Examples:
 			nextStart += nextPage.Size
 		}
 
-		return outputJSON(combined)
+		if isJSONOutput(cmd) {
+			return outputJSON(combined)
+		}
+
+		combinedRaw, err := json.Marshal(map[string]interface{}{
+			"results":   combined,
+			"totalSize": firstPage.Total,
+			"size":      len(combined),
+		})
+		if err != nil {
+			return outputJSON(combined)
+		}
+		return printSearchTable(combinedRaw)
 	},
 }
 
@@ -134,6 +146,6 @@ func init() {
 	confSearchCmd.Flags().Int("limit", 25, "Maximum number of results per page")
 	confSearchCmd.Flags().Int("start", 0, "Index of the first result (for pagination)")
 	confSearchCmd.Flags().String("expand", "", "Comma-separated list of properties to expand (e.g. body.view,space)")
-	addAllFlag(confSearchCmd)
+	confSearchCmd.Flags().Bool("all", false, "Fetch all results, overriding --limit and --start")
 	confSearchCmd.Flags().Bool("json", false, "Output as JSON")
 }

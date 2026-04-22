@@ -189,3 +189,92 @@ func TestConfluenceV2PutMethod(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func TestConfluenceV1BasicAuth(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/wiki/rest/api/content/search" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		user, pass, ok := r.BasicAuth()
+		if !ok {
+			t.Error("expected basic auth")
+		}
+		if user != "user@test.com" || pass != "token123" {
+			t.Errorf("unexpected creds: %s:%s", user, pass)
+		}
+		if r.Header.Get("Accept") != "application/json" {
+			t.Error("expected Accept: application/json")
+		}
+		if r.Method != "GET" {
+			t.Errorf("expected GET, got %s", r.Method)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"results": []interface{}{}, "totalSize": 0})
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL, "user@test.com", "token123")
+	c.HTTPClient = srv.Client()
+
+	_, err := c.ConfluenceV1("GET", "/content/search", nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestConfluenceV1BearerAuth(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		auth := r.Header.Get("Authorization")
+		if auth != "Bearer mytoken" {
+			t.Errorf("expected Bearer auth, got: %s", auth)
+		}
+		w.Write([]byte(`{"results":[],"totalSize":0}`))
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL, "", "mytoken")
+	c.HTTPClient = srv.Client()
+
+	_, err := c.ConfluenceV1("GET", "/content/search", nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestConfluenceV1WithQueryParams(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("cql") != "type=page AND space=DEV" {
+			t.Errorf("unexpected cql param: %s", r.URL.Query().Get("cql"))
+		}
+		if r.URL.Query().Get("limit") != "10" {
+			t.Errorf("unexpected limit: %s", r.URL.Query().Get("limit"))
+		}
+		w.Write([]byte(`{"results":[],"totalSize":0}`))
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL, "", "tok")
+	c.HTTPClient = srv.Client()
+
+	q := url.Values{"cql": {"type=page AND space=DEV"}, "limit": {"10"}}
+	_, err := c.ConfluenceV1("GET", "/content/search", q, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestConfluenceV1APIError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write([]byte("unauthorized"))
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL, "", "bad-token")
+	c.HTTPClient = srv.Client()
+
+	_, err := c.ConfluenceV1("GET", "/content/search", nil, nil)
+	if err == nil {
+		t.Fatal("expected error for 401")
+	}
+}
