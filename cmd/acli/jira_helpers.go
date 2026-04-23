@@ -3,6 +3,7 @@ package acli
 import (
 	"fmt"
 	"os"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/chinmaymk/acli/internal/bitbucket"
@@ -131,7 +132,7 @@ func truncate(s string, maxLen int) string {
 	return s[:maxLen-3] + "..."
 }
 
-// printIssueRow prints a single issue row to a tabwriter (shared by board/sprint/search).
+// printIssueRow prints a single issue row to a tabwriter (shared by board/sprint).
 func printIssueRow(w *tabwriter.Writer, issue jira.IssueDetailed) {
 	issueType := ""
 	if issue.Fields.IssueType != nil {
@@ -151,4 +152,105 @@ func printIssueRow(w *tabwriter.Writer, issue jira.IssueDetailed) {
 	}
 	_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
 		issue.Key, issueType, status, priority, assignee, issue.Fields.Summary)
+}
+
+// issueFieldHeaders maps Jira field names (as passed to --fields) to display column headers.
+var issueFieldHeaders = map[string]string{
+	"summary":     "SUMMARY",
+	"status":      "STATUS",
+	"priority":    "PRIORITY",
+	"issuetype":   "TYPE",
+	"assignee":    "ASSIGNEE",
+	"reporter":    "REPORTER",
+	"creator":     "CREATOR",
+	"created":     "CREATED",
+	"updated":     "UPDATED",
+	"duedate":     "DUE DATE",
+	"labels":      "LABELS",
+	"resolution":  "RESOLUTION",
+	"components":  "COMPONENTS",
+	"fixversions": "FIX VERSIONS",
+	"versions":    "VERSIONS",
+	"project":     "PROJECT",
+	"parent":      "PARENT",
+}
+
+// issueFieldHeader returns the column header for a Jira field name.
+func issueFieldHeader(name string) string {
+	if h, ok := issueFieldHeaders[strings.ToLower(name)]; ok {
+		return h
+	}
+	return strings.ToUpper(name)
+}
+
+// renderIssueField returns the display value for a given Jira field on an issue.
+func renderIssueField(name string, issue jira.IssueDetailed) string {
+	f := issue.Fields
+	switch strings.ToLower(name) {
+	case "summary":
+		return f.Summary
+	case "status":
+		if f.Status != nil {
+			return f.Status.Name
+		}
+	case "priority":
+		if f.Priority != nil {
+			return f.Priority.Name
+		}
+	case "issuetype":
+		if f.IssueType != nil {
+			return f.IssueType.Name
+		}
+	case "assignee":
+		if f.Assignee != nil {
+			return f.Assignee.DisplayName
+		}
+	case "reporter":
+		if f.Reporter != nil {
+			return f.Reporter.DisplayName
+		}
+	case "creator":
+		if f.Creator != nil {
+			return f.Creator.DisplayName
+		}
+	case "created":
+		return f.Created
+	case "updated":
+		return f.Updated
+	case "duedate":
+		return f.DueDate
+	case "labels":
+		return strings.Join(f.Labels, ",")
+	case "resolution":
+		if f.Resolution != nil {
+			return f.Resolution.Name
+		}
+	case "components":
+		names := make([]string, 0, len(f.Components))
+		for _, c := range f.Components {
+			names = append(names, c.Name)
+		}
+		return strings.Join(names, ",")
+	case "fixversions":
+		names := make([]string, 0, len(f.FixVersions))
+		for _, v := range f.FixVersions {
+			names = append(names, v.Name)
+		}
+		return strings.Join(names, ",")
+	case "versions":
+		names := make([]string, 0, len(f.Versions))
+		for _, v := range f.Versions {
+			names = append(names, v.Name)
+		}
+		return strings.Join(names, ",")
+	case "project":
+		if f.Project != nil {
+			return f.Project.Key
+		}
+	case "parent":
+		if f.Parent != nil {
+			return f.Parent.Key
+		}
+	}
+	return ""
 }

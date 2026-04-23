@@ -2,6 +2,7 @@ package acli
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/chinmaymk/acli/internal/jira"
 	"github.com/spf13/cobra"
@@ -24,6 +25,10 @@ var jiraSearchCmd = &cobra.Command{
 		startAt, _ := cmd.Flags().GetInt("start-at")
 		fields, _ := cmd.Flags().GetStringSlice("fields")
 		all, _ := cmd.Flags().GetBool("all")
+
+		if len(fields) == 0 {
+			fields = []string{"summary"}
+		}
 
 		results, err := client.SearchJQL(jql, startAt, maxResults, fields, nil)
 		if err != nil {
@@ -48,9 +53,17 @@ var jiraSearchCmd = &cobra.Command{
 		}
 
 		w := newTabWriter()
-		_, _ = fmt.Fprintln(w, "KEY\tTYPE\tSTATUS\tPRIORITY\tASSIGNEE\tSUMMARY")
+		headers := []string{"KEY"}
+		for _, f := range fields {
+			headers = append(headers, issueFieldHeader(f))
+		}
+		_, _ = fmt.Fprintln(w, strings.Join(headers, "\t"))
 		for _, issue := range results.Issues {
-			printIssueRow(w, issue)
+			row := []string{issue.Key}
+			for _, f := range fields {
+				row = append(row, renderIssueField(f, issue))
+			}
+			_, _ = fmt.Fprintln(w, strings.Join(row, "\t"))
 		}
 		_ = w.Flush()
 		printPaginationHint(cmd, len(results.Issues), results.Total)

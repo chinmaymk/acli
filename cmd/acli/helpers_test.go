@@ -91,6 +91,56 @@ func TestPrintIssueRowWithAllFields(t *testing.T) {
 	w.Flush()
 }
 
+func TestIssueFieldHeader(t *testing.T) {
+	tests := []struct {
+		name string
+		want string
+	}{
+		{"summary", "SUMMARY"},
+		{"issuetype", "TYPE"},
+		{"fixversions", "FIX VERSIONS"},
+		{"SUMMARY", "SUMMARY"},
+		{"customfield_10001", "CUSTOMFIELD_10001"},
+	}
+	for _, tt := range tests {
+		if got := issueFieldHeader(tt.name); got != tt.want {
+			t.Errorf("issueFieldHeader(%q) = %q, want %q", tt.name, got, tt.want)
+		}
+	}
+}
+
+func TestRenderIssueField(t *testing.T) {
+	issue := jira.IssueDetailed{
+		Key: "TEST-1",
+		Fields: jira.IssueFields{
+			Summary:   "Hello",
+			IssueType: &jira.IssueType{Name: "Bug"},
+			Status:    &jira.StatusDetails{Name: "Open"},
+			Priority:  &jira.Priority{Name: "High"},
+			Assignee:  &jira.UserDetails{DisplayName: "Alice"},
+			Labels:    []string{"a", "b"},
+		},
+	}
+	tests := []struct {
+		field string
+		want  string
+	}{
+		{"summary", "Hello"},
+		{"issuetype", "Bug"},
+		{"status", "Open"},
+		{"priority", "High"},
+		{"assignee", "Alice"},
+		{"labels", "a,b"},
+		{"reporter", ""},
+		{"unknown", ""},
+	}
+	for _, tt := range tests {
+		if got := renderIssueField(tt.field, issue); got != tt.want {
+			t.Errorf("renderIssueField(%q) = %q, want %q", tt.field, got, tt.want)
+		}
+	}
+}
+
 func TestMaskToken(t *testing.T) {
 	tests := []struct {
 		input string
