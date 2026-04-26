@@ -403,6 +403,11 @@ func (c *Client) GetAttachmentMeta() (*AttachmentMeta, error) {
 	return &result, nil
 }
 
+// DownloadAttachmentContent downloads the binary content of an attachment by ID.
+func (c *Client) DownloadAttachmentContent(id string) ([]byte, error) {
+	return c.GetRaw(fmt.Sprintf("/rest/api/3/attachment/content/%s", id), nil)
+}
+
 // ============================================================================
 // Issue Types
 // ============================================================================

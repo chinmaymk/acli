@@ -2,6 +2,7 @@ package acli
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/chinmaymk/acli/internal/adf"
@@ -798,6 +799,83 @@ var jiraIssueAttachCmd = &cobra.Command{
 	},
 }
 
+// --- issue attachment (group) ---
+
+var jiraIssueAttachmentCmd = &cobra.Command{
+	Use:     "attachment",
+	Aliases: []string{"att"},
+	Short:   "Manage issue attachments",
+	RunE:    helpRunE,
+}
+
+// --- issue attachment list ---
+
+var jiraIssueAttachmentListCmd = &cobra.Command{
+	Use:     "list <issue-key>",
+	Aliases: []string{"ls"},
+	Short:   "List attachments on an issue",
+	Args:    cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		client, err := getJiraClient(cmd)
+		if err != nil {
+			return err
+		}
+
+		issue, err := client.GetIssue(args[0], []string{"attachment"}, nil)
+		if err != nil {
+			return err
+		}
+
+		if isJSONOutput(cmd) {
+			return outputJSON(issue.Fields.Attachment)
+		}
+
+		w := newTabWriter()
+		_, _ = fmt.Fprintf(w, "ID\tFILENAME\tSIZE\tMIME TYPE\tCREATED\n")
+		for _, a := range issue.Fields.Attachment {
+			_, _ = fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%s\n", a.ID, a.Filename, a.Size, a.MimeType, a.Created)
+		}
+		_ = w.Flush()
+		return nil
+	},
+}
+
+// --- issue attachment download ---
+
+var jiraIssueAttachmentDownloadCmd = &cobra.Command{
+	Use:   "download <attachment-id>",
+	Short: "Download an attachment",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		client, err := getJiraClient(cmd)
+		if err != nil {
+			return err
+		}
+
+		att, err := client.GetAttachment(args[0])
+		if err != nil {
+			return err
+		}
+
+		dest, _ := cmd.Flags().GetString("dest")
+		if dest == "" {
+			dest = att.Filename
+		}
+
+		data, err := client.DownloadAttachmentContent(args[0])
+		if err != nil {
+			return err
+		}
+
+		if err := os.WriteFile(dest, data, 0644); err != nil {
+			return err
+		}
+
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Downloaded: %s (%d bytes)\n", dest, len(data))
+		return nil
+	},
+}
+
 // --- issue vote ---
 
 var jiraIssueVoteCmd = &cobra.Command{
@@ -1257,6 +1335,11 @@ func init() {
 	jiraIssueRemoteLinkCmd.AddCommand(jiraIssueRemoteLinkCreateCmd)
 	jiraIssueRemoteLinkCmd.AddCommand(jiraIssueRemoteLinkDeleteCmd)
 
+	// Wire attachment subcommands
+	jiraIssueAttachmentDownloadCmd.Flags().String("dest", "", "Destination file path (default: original filename)")
+	jiraIssueAttachmentCmd.AddCommand(jiraIssueAttachmentListCmd)
+	jiraIssueAttachmentCmd.AddCommand(jiraIssueAttachmentDownloadCmd)
+
 	// Wire all issue subcommands
 	jiraIssueCmd.AddCommand(jiraIssueListCmd)
 	jiraIssueCmd.AddCommand(jiraIssueGetCmd)
@@ -1269,6 +1352,7 @@ func init() {
 	jiraIssueCmd.AddCommand(jiraIssueCommentCmd)
 	jiraIssueCmd.AddCommand(jiraIssueWorklogCmd)
 	jiraIssueCmd.AddCommand(jiraIssueAttachCmd)
+	jiraIssueCmd.AddCommand(jiraIssueAttachmentCmd)
 	jiraIssueCmd.AddCommand(jiraIssueVoteCmd)
 	jiraIssueCmd.AddCommand(jiraIssueUnvoteCmd)
 	jiraIssueCmd.AddCommand(jiraIssueWatchCmd)

@@ -1,6 +1,9 @@
 package jira
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"fmt"
+)
 
 // Pagination is the common pagination fields in Jira responses.
 type Pagination struct {
@@ -314,6 +317,9 @@ type WorklogPage struct {
 }
 
 // Attachment represents a file attachment.
+// The Jira API returns the ID as a string from issue fields but as a number
+// from the /rest/api/3/attachment/{id} endpoint, so we use a custom
+// UnmarshalJSON to handle both.
 type Attachment struct {
 	Self      string       `json:"self,omitempty"`
 	ID        string       `json:"id,omitempty"`
@@ -324,6 +330,31 @@ type Attachment struct {
 	MimeType  string       `json:"mimeType,omitempty"`
 	Content   string       `json:"content,omitempty"`
 	Thumbnail string       `json:"thumbnail,omitempty"`
+}
+
+func (a *Attachment) UnmarshalJSON(data []byte) error {
+	type alias Attachment
+	raw := &struct {
+		ID json.RawMessage `json:"id,omitempty"`
+		*alias
+	}{alias: (*alias)(a)}
+	if err := json.Unmarshal(data, raw); err != nil {
+		return err
+	}
+	if raw.ID != nil {
+		var s string
+		if json.Unmarshal(raw.ID, &s) == nil {
+			a.ID = s
+		} else {
+			var n json.Number
+			if json.Unmarshal(raw.ID, &n) == nil {
+				a.ID = n.String()
+			} else {
+				a.ID = fmt.Sprintf("%s", raw.ID)
+			}
+		}
+	}
+	return nil
 }
 
 // Watches represents issue watchers.
