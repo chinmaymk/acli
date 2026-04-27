@@ -17,6 +17,64 @@ var bbPRCmd = &cobra.Command{
 }
 
 func init() {
+	// pr search
+	prSearchCmd := &cobra.Command{
+		Use:   "search [workspace] <repo-slug> <filter>",
+		Short: "Search pull requests in a workspace",
+		Args:  cobra.RangeArgs(2, 3),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			var workspace, repoSlug, filter string
+			if len(args) == 3 {
+				workspace, repoSlug, filter = args[0], args[1], args[2]
+			} else {
+				var err error
+				workspace, err = defaultWorkspace(cmd, nil, 0)
+				if err != nil {
+					return err
+				}
+				repoSlug, filter = args[0], args[1]
+			}
+			client, err := getBitbucketClient(cmd)
+			if err != nil {
+				return err
+			}
+
+			pOpts := getBBPaginationOpts(cmd)
+			query := fmt.Sprintf(`(%s) AND destination.repository.full_name="%s/%s"`, filter, workspace, repoSlug)
+
+			prs, err := client.SearchWorkspacePullRequests(workspace, repoSlug, &bitbucket.SearchWorkspacePRsOptions{
+				Filter:  query,
+				Page:    pOpts.Page,
+				PageLen: pOpts.PageLen,
+				All:     pOpts.All,
+			})
+			if err != nil {
+				return err
+			}
+
+			if isJSONOutput(cmd) {
+				return outputJSON(prs)
+			}
+
+			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+			_, _ = fmt.Fprintln(w, "ID\tTITLE\tSTATE\tAUTHOR\tREPOSITORY\tSOURCE\tDESTINATION")
+			for _, pr := range prs {
+				_, _ = fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\t%s\t%s\n",
+					pr.ID,
+					truncate(firstLine(pr.Title), 70),
+					pr.State,
+					pr.Author.DisplayName,
+					pr.Source.Repository.FullName,
+					pr.Source.Branch.Name,
+					pr.Destination.Branch.Name,
+				)
+			}
+			return w.Flush()
+		},
+	}
+	addBBPaginationFlags(prSearchCmd)
+	bbPRCmd.AddCommand(prSearchCmd)
+
 	// pr list
 	prListCmd := &cobra.Command{
 		Use:     "list [workspace] <repo-slug>",

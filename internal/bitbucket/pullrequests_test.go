@@ -57,6 +57,70 @@ func TestListPullRequestsAll(t *testing.T) {
 	}
 }
 
+func TestSearchWorkspacePullRequests(t *testing.T) {
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		if gotPath != "/2.0/repositories/ws/repo/pullrequests" {
+			t.Errorf("unexpected path: %s", gotPath)
+		}
+		q := r.URL.Query().Get("q")
+		if q != `title ~ "bug"` {
+			t.Errorf("unexpected q: %s", q)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(PaginatedResponse{
+			Values: json.RawMessage(`[{"id": 3, "title": "Fix bug", "state": "OPEN"}]`),
+		})
+	}))
+	defer srv.Close()
+
+	c := newRedirectClient(srv)
+	prs, err := c.SearchWorkspacePullRequests("ws", "repo", &SearchWorkspacePRsOptions{
+		Filter: `title ~ "bug"`,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(prs) != 1 {
+		t.Fatalf("expected 1 PR, got %d", len(prs))
+	}
+	if prs[0].ID != 3 {
+		t.Errorf("unexpected id: %d", prs[0].ID)
+	}
+}
+
+func TestSearchWorkspacePullRequestsAll(t *testing.T) {
+	callCount := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		w.Header().Set("Content-Type", "application/json")
+		if callCount == 1 {
+			json.NewEncoder(w).Encode(PaginatedResponse{
+				Next:   "https://api.bitbucket.org/2.0/repositories/ws/repo/pullrequests?page=2",
+				Values: json.RawMessage(`[{"id": 1, "title": "PR 1"}]`),
+			})
+			return
+		}
+		json.NewEncoder(w).Encode(PaginatedResponse{
+			Values: json.RawMessage(`[{"id": 2, "title": "PR 2"}]`),
+		})
+	}))
+	defer srv.Close()
+
+	c := newRedirectClient(srv)
+	prs, err := c.SearchWorkspacePullRequests("ws", "repo", &SearchWorkspacePRsOptions{
+		Filter: `state="OPEN"`,
+		All:    true,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(prs) != 2 {
+		t.Fatalf("expected 2 PRs, got %d", len(prs))
+	}
+}
+
 func TestGetPullRequest(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

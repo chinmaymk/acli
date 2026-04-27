@@ -54,6 +54,13 @@ type ListPRsOptions struct {
 	All     bool
 }
 
+type SearchWorkspacePRsOptions struct {
+	Filter  string
+	Page    int
+	PageLen int
+	All     bool
+}
+
 func (c *Client) ListPullRequests(workspace, repoSlug string, opts *ListPRsOptions) ([]PullRequest, error) {
 	params := url.Values{}
 	if opts != nil {
@@ -88,6 +95,61 @@ func (c *Client) ListPullRequests(workspace, repoSlug string, opts *ListPRsOptio
 	}
 
 	if opts != nil && opts.All {
+		pages, err := c.getAll(path)
+		if err != nil && len(pages) == 0 {
+			return nil, err
+		}
+		var prs []PullRequest
+		for _, pg := range pages {
+			var pagePRs []PullRequest
+			if err := json.Unmarshal(pg.Values, &pagePRs); err != nil {
+				return prs, fmt.Errorf("parsing pull requests: %w", err)
+			}
+			prs = append(prs, pagePRs...)
+		}
+		return prs, nil
+	}
+
+	data, err := c.get(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var page PaginatedResponse
+	if err := json.Unmarshal(data, &page); err != nil {
+		return nil, fmt.Errorf("parsing response: %w", err)
+	}
+
+	var prs []PullRequest
+	if err := json.Unmarshal(page.Values, &prs); err != nil {
+		return nil, fmt.Errorf("parsing pull requests: %w", err)
+	}
+
+	return prs, nil
+}
+
+func (c *Client) SearchWorkspacePullRequests(workspace string, repoSlug string, opts *SearchWorkspacePRsOptions) ([]PullRequest, error) {
+	params := url.Values{}
+	if opts != nil {
+		if opts.Filter != "" {
+			params.Set("q", opts.Filter)
+		}
+		if opts.Page > 0 {
+			params.Set("page", fmt.Sprintf("%d", opts.Page))
+		}
+		if opts.PageLen > 0 {
+			params.Set("pagelen", fmt.Sprintf("%d", opts.PageLen))
+		}
+	}
+	ensurePageLen(params)
+
+	path := fmt.Sprintf("/repositories/%s/%s/pullrequests", url.PathEscape(workspace), url.PathEscape(repoSlug))
+	if len(params) > 0 {
+		path += "?" + params.Encode()
+	}
+
+	if opts != nil && opts.All {
+
 		pages, err := c.getAll(path)
 		if err != nil && len(pages) == 0 {
 			return nil, err
@@ -450,9 +512,9 @@ func (c *Client) GetPRDiff(workspace, repoSlug string, prID int) (string, error)
 // PR Task types and methods
 
 type PRTask struct {
-	ID        int    `json:"id"`
-	State     string `json:"state"`
-	Content   struct {
+	ID      int    `json:"id"`
+	State   string `json:"state"`
+	Content struct {
 		Raw    string `json:"raw"`
 		Markup string `json:"markup"`
 		HTML   string `json:"html"`
