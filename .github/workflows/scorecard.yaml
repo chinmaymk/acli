@@ -15,6 +15,11 @@ jobs:
   analysis:
     name: Scorecard analysis
     runs-on: ubuntu-latest
+    # Scorecard depends on GitHub's GraphQL API, which intermittently returns
+    # 500s ("Something went wrong while executing your query"). Don't let
+    # those transient errors mark the master build as failed; the weekly
+    # scheduled run will re-collect results.
+    continue-on-error: true
 
     permissions:
       security-events: write
