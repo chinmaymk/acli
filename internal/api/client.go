@@ -26,8 +26,8 @@ func NewClient(baseURL, email, apiToken string) *Client {
 	}
 }
 
-func (c *Client) ConfluenceV2(method, path string, query url.Values, body interface{}) ([]byte, error) {
-	endpoint := c.BaseURL + "/wiki/api/v2" + path
+func (c *Client) confluenceRequest(apiBase, method, path string, query url.Values, body interface{}) ([]byte, error) {
+	endpoint := c.BaseURL + apiBase + path
 	if len(query) > 0 {
 		endpoint += "?" + query.Encode()
 	}
@@ -72,4 +72,12 @@ func (c *Client) ConfluenceV2(method, path string, query url.Values, body interf
 	}
 
 	return respBody, nil
+}
+
+func (c *Client) ConfluenceV1(method, path string, query url.Values, body interface{}) ([]byte, error) {
+	return c.confluenceRequest("/wiki/rest/api", method, path, query, body)
+}
+
+func (c *Client) ConfluenceV2(method, path string, query url.Values, body interface{}) ([]byte, error) {
+	return c.confluenceRequest("/wiki/api/v2", method, path, query, body)
 }
