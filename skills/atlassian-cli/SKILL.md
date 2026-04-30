@@ -54,9 +54,11 @@ It eliminates an entire class of quoting and shell-injection bugs because nothin
 ## Setup
 
 ```bash
-make build && make install         # binary → $GOPATH/bin/acli
-acli config setup <profile-name>   # interactive: URL, email, API token
+which acli || (make build && make install)   # bin/acli (build) or $GOPATH/bin/acli (install)
+acli config list >/dev/null 2>&1 || acli config setup <profile-name>
 ```
+
+`config setup` is interactive — URL, email, API token. If a profile already exists, `acli` is ready to use.
 
 - **Email + token** → Basic auth (Atlassian Cloud API tokens)
 - **Token only, no email** → Bearer auth (OAuth / scoped tokens)
@@ -83,6 +85,12 @@ acli config set-defaults [profile]     # set defaults for --project, workspace, 
 | `--output`   | `-o`  | `text`  | `text` or `json`. **Use `json` for agent/scripted use.**  |
 
 Many commands also accept a local `--json` flag (kept for backwards compat). `-o json` is the canonical switch and works on every command, including mutations — it returns a structured envelope (`{status, action, key, message, data}`) so agents can confirm writes and pull out IDs.
+
+**Errors are always plain-text on stderr, regardless of `-o json`.** Exit code is non-zero on failure. When scripting, check `$?` and capture stderr separately:
+
+```bash
+out=$(acli jira issue get PROJ-123 -o json 2>err.log) || { cat err.log; exit 1; }
+```
 
 ## Pagination
 
@@ -135,12 +143,15 @@ acli confluence page list --space-id <space-id> --limit 50 -o json
 
 # Write — page bodies almost always need stdin mode
 echo '["confluence","page","create","--space-id","123","--title","Runbook","--body","<p>Step 1: <code>kubectl ...</code></p>","--body-format","storage"]' | acli -
-acli confluence page update <page-id> --title "New title" --version-number <n+1>
 acli confluence comment footer create --page-id <page-id> --body "LGTM"
 acli confluence label pages <label-id> --all -o json
+
+# Updates require both --title and --version-number (current version + 1)
+v=$(acli confluence page get <page-id> --include-version -o json | jq -r '.version.number')
+acli confluence page update <page-id> --title "New title" --body "<p>...</p>" --version-number $((v+1))
 ```
 
-Confluence v2 requires `--version-number` on every update (incremented from the current version). Get it with `acli confluence page get <id> --include-version`.
+Confluence v2 page/blogpost/comment updates **require** `--title` and `--version-number` (current + 1). Read the current version with `--include-version`, increment, and pass it back. Body format defaults to `storage` (Confluence storage XML); pass `--body-format atlas_doc_format` or `wiki` if you have ADF/wiki markup instead.
 
 ### Bitbucket
 
@@ -159,6 +170,16 @@ acli bitbucket pipeline log <workspace> <repo-slug> <pipeline-uuid> <step-uuid>
 ```
 
 `<workspace>` is optional on most Bitbucket commands when a profile default is set (`acli config set-defaults`).
+
+## Common pitfalls
+
+- **Jira: edit, not update.** It's `acli jira issue edit <key>`, not `update`.
+- **Confluence updates** need both `--title` and `--version-number` (see Confluence section). Forgetting either is the most common error.
+- **Bitbucket `<workspace>` is positional**, not a flag. With a profile default it can be omitted, but otherwise: `acli bb pr list <workspace> <repo-slug>`.
+- **`--all` walks every page.** Cheap on small result sets, expensive (and rate-limit-prone) on big ones. Prefer a bounded request when you can.
+- **Search vs. list.** `acli jira search` is the JQL-first command with `--fields`. `acli jira issue list` is a convenience wrapper with `--project`/`--assignee`/`--status` shortcuts. Either accepts `--jql`.
+- **Stdin mode rejects empty input and non-string-array JSON.** `[]` falls through to the root help; pipe in a real argv array.
+- **Mutations in dry-run mode**: there is no dry-run. Read first (`get`/`list -o json`) before destructive writes.
 
 ## Tips for agent use
 
