@@ -14,14 +14,15 @@ export function createClient(baseURL: string, email: string, apiToken: string): 
   };
 }
 
-export async function confluenceV2<T>(
+async function confluenceRequest<T>(
   client: ConfluenceClient,
+  apiBase: string,
   method: string,
   path: string,
   query?: Record<string, string> | null,
   body?: JsonBody,
 ): Promise<T> {
-  let endpoint = client.baseURL + '/wiki/api/v2' + path;
+  let endpoint = client.baseURL + apiBase + path;
 
   if (query && Object.keys(query).length > 0) {
     const params = new URLSearchParams(query);
@@ -62,4 +63,24 @@ export async function confluenceV2<T>(
   }
 
   return JSON.parse(text) as T;
+}
+
+export function confluenceV1<T>(
+  client: ConfluenceClient,
+  method: string,
+  path: string,
+  query?: Record<string, string> | null,
+  body?: JsonBody,
+): Promise<T> {
+  return confluenceRequest<T>(client, '/wiki/rest/api', method, path, query, body);
+}
+
+export function confluenceV2<T>(
+  client: ConfluenceClient,
+  method: string,
+  path: string,
+  query?: Record<string, string> | null,
+  body?: JsonBody,
+): Promise<T> {
+  return confluenceRequest<T>(client, '/wiki/api/v2', method, path, query, body);
 }
