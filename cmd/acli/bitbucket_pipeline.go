@@ -34,9 +34,11 @@ func init() {
 			}
 
 			status, _ := cmd.Flags().GetString("status")
+			branch, _ := cmd.Flags().GetString("branch")
 			pOpts := getBBPaginationOpts(cmd)
 			pipelines, err := client.ListPipelines(workspace, repoSlug, &bitbucket.ListPipelinesOptions{
 				Status:            status,
+				Branch:            branch,
 				PaginationOptions: *pOpts,
 			})
 			if err != nil {
@@ -61,6 +63,7 @@ func init() {
 		},
 	}
 	pipelineListCmd.Flags().String("status", "", "Filter by status (PENDING, BUILDING, PASSED, FAILED, etc.)")
+	pipelineListCmd.Flags().String("branch", "", "Filter by target branch name")
 	addBBPaginationFlags(pipelineListCmd)
 	bbPipelineCmd.AddCommand(pipelineListCmd)
 

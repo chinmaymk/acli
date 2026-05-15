@@ -46,6 +46,7 @@ type Pipeline struct {
 
 type ListPipelinesOptions struct {
 	Status string
+	Branch string
 	Sort   string
 	PaginationOptions
 }
@@ -55,6 +56,9 @@ func (c *Client) ListPipelines(workspace, repoSlug string, opts *ListPipelinesOp
 	if opts != nil {
 		if opts.Status != "" {
 			params.Set("status", opts.Status)
+		}
+		if opts.Branch != "" {
+			params.Set("target.branch", opts.Branch)
 		}
 		if opts.Sort != "" {
 			params.Set("sort", opts.Sort)
