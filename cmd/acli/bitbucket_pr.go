@@ -428,6 +428,7 @@ func init() {
 
 			filePath, _ := cmd.Flags().GetString("file")
 			line, _ := cmd.Flags().GetInt("line")
+			parentID, _ := cmd.Flags().GetInt("parent-id")
 
 			if filePath != "" && line == 0 {
 				return fmt.Errorf("--line is required when --file is specified")
@@ -435,25 +436,36 @@ func init() {
 			if line != 0 && filePath == "" {
 				return fmt.Errorf("--file is required when --line is specified")
 			}
-
-			var inline *bitbucket.InlineCommentParams
-			if filePath != "" {
-				inline = &bitbucket.InlineCommentParams{
-					Path: filePath,
-					To:   line,
-				}
+			if parentID != 0 && (filePath != "" || line != 0) {
+				return fmt.Errorf("--parent-id cannot be combined with --file/--line; replies inherit inline context from the parent")
 			}
 
-			comment, err := client.CreatePRCommentInline(workspace, repoSlug, prID, body, inline)
+			var comment *bitbucket.PRComment
+			switch {
+			case parentID != 0:
+				comment, err = client.CreatePRCommentReply(workspace, repoSlug, prID, parentID, body)
+			case filePath != "":
+				comment, err = client.CreatePRCommentInline(workspace, repoSlug, prID, body, &bitbucket.InlineCommentParams{
+					Path: filePath,
+					To:   line,
+				})
+			default:
+				comment, err = client.CreatePRComment(workspace, repoSlug, prID, body)
+			}
 			if err != nil {
 				return err
 			}
-			return outputResult(cmd, "created", fmt.Sprintf("%d", comment.ID), fmt.Sprintf("Added comment #%d to PR #%d", comment.ID, prID), comment)
+			msg := fmt.Sprintf("Added comment #%d to PR #%d", comment.ID, prID)
+			if parentID != 0 {
+				msg = fmt.Sprintf("Added reply #%d to comment #%d on PR #%d", comment.ID, parentID, prID)
+			}
+			return outputResult(cmd, "created", fmt.Sprintf("%d", comment.ID), msg, comment)
 		},
 	}
 	prCommentCmd.Flags().String("body", "", "Comment body (required)")
 	prCommentCmd.Flags().String("file", "", "File path for an inline comment")
 	prCommentCmd.Flags().Int("line", 0, "Line number in the new version of the file (requires --file)")
+	prCommentCmd.Flags().Int("parent-id", 0, "Parent comment ID to reply to (creates a threaded reply)")
 	bbPRCmd.AddCommand(prCommentCmd)
 
 	// pr diff

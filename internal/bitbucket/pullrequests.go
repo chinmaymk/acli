@@ -471,6 +471,15 @@ func (c *Client) CreatePRComment(workspace, repoSlug string, prID int, content s
 }
 
 func (c *Client) CreatePRCommentInline(workspace, repoSlug string, prID int, content string, inline *InlineCommentParams) (*PRComment, error) {
+	return c.createPRComment(workspace, repoSlug, prID, content, inline, 0)
+}
+
+// CreatePRCommentReply posts a reply to an existing pull request comment.
+func (c *Client) CreatePRCommentReply(workspace, repoSlug string, prID, parentID int, content string) (*PRComment, error) {
+	return c.createPRComment(workspace, repoSlug, prID, content, nil, parentID)
+}
+
+func (c *Client) createPRComment(workspace, repoSlug string, prID int, content string, inline *InlineCommentParams, parentID int) (*PRComment, error) {
 	body := map[string]interface{}{
 		"content": map[string]string{
 			"raw": content,
@@ -481,6 +490,9 @@ func (c *Client) CreatePRCommentInline(workspace, repoSlug string, prID int, con
 			"path": inline.Path,
 			"to":   inline.To,
 		}
+	}
+	if parentID > 0 {
+		body["parent"] = map[string]int{"id": parentID}
 	}
 	jsonBody, err := json.Marshal(body)
 	if err != nil {
