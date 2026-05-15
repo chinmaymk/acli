@@ -3,6 +3,10 @@ version: 2
 builds:
   - main: .
     binary: acli
+    # CGO disabled so Linux builds are statically linked and have no glibc
+    # dependency — the same binary runs on older distros (RHEL 7, Ubuntu 16.04, Alpine, etc.).
+    env:
+      - CGO_ENABLED=0
     ldflags:
       - -s -w
       - -X github.com/chinmaymk/acli/cmd/acli.version={{.Version}}

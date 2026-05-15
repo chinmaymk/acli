@@ -7,6 +7,10 @@ LDFLAGS  = -s -w \
 	-X github.com/chinmaymk/acli/cmd/acli.commit=$(COMMIT) \
 	-X github.com/chinmaymk/acli/cmd/acli.date=$(DATE)
 
+# CGO_ENABLED=0 produces a fully static binary with no glibc dependency,
+# so the same Linux build runs on older distros (RHEL 7, Ubuntu 16.04, Alpine, etc.).
+export CGO_ENABLED=0
+
 .PHONY: build clean test lint install all
 
 build:
