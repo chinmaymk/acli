@@ -1,4 +1,4 @@
-import { get, post, put, del } from './client.js';
+import { get, post, put, del, getBuffer } from './client.js';
 import type { JiraClient } from './client.js';
 import type {
   AnnouncementBanner,
@@ -424,6 +424,13 @@ export async function deleteAttachment(client: JiraClient, id: string): Promise<
  */
 export async function getAttachmentMeta(client: JiraClient): Promise<AttachmentMeta> {
   return get(client, '/rest/api/3/attachment/meta');
+}
+
+/**
+ * Downloads the binary content of an attachment by ID.
+ */
+export async function downloadAttachmentContent(client: JiraClient, id: string): Promise<Buffer> {
+  return getBuffer(client, `/rest/api/3/attachment/content/${id}`);
 }
 
 // ============================================================================

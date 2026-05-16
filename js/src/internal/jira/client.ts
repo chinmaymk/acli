@@ -241,3 +241,16 @@ export async function getRaw(
   const response = await doRequest(client, 'GET', url);
   return response.text();
 }
+
+/**
+ * GET request that returns the response body as a Buffer (binary-safe).
+ */
+export async function getBuffer(
+  client: JiraClient,
+  urlPath: string,
+  query?: Record<string, string>,
+): Promise<Buffer> {
+  const url = buildURL(client.baseURL, urlPath, query);
+  const response = await doRequest(client, 'GET', url);
+  return Buffer.from(await response.arrayBuffer());
+}
