@@ -428,9 +428,42 @@ export async function getAttachmentMeta(client: JiraClient): Promise<AttachmentM
 
 /**
  * Downloads the binary content of an attachment by ID.
+ * Jira returns a 303 redirect to a CDN URL; we follow it without
+ * forwarding auth headers (CDNs reject unexpected Authorization).
  */
 export async function downloadAttachmentContent(client: JiraClient, id: string): Promise<Buffer> {
-  return getBuffer(client, `/rest/api/3/attachment/content/${id}`);
+  const url = `${client.baseURL}/rest/api/3/attachment/content/${id}`;
+  const encoded = client.email
+    ? Buffer.from(`${client.email}:${client.apiToken}`).toString('base64')
+    : null;
+  const authValue = encoded ? `Basic ${encoded}` : `Bearer ${client.apiToken}`;
+
+  // First request: authenticated, manual redirect to capture CDN location
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: { Authorization: authValue, Accept: 'application/octet-stream' },
+    redirect: 'manual',
+  });
+
+  // If Jira returns the content directly (no redirect)
+  if (response.ok) {
+    return Buffer.from(await response.arrayBuffer());
+  }
+
+  // Follow 3xx redirect to CDN without auth
+  if (response.status >= 300 && response.status < 400) {
+    const location = response.headers.get('location');
+    if (!location) {
+      throw new Error(`Attachment redirect ${response.status} without Location header`);
+    }
+    const cdnResponse = await fetch(location, { method: 'GET' });
+    if (!cdnResponse.ok) {
+      throw new Error(`CDN fetch failed: ${cdnResponse.status} ${cdnResponse.statusText}`);
+    }
+    return Buffer.from(await cdnResponse.arrayBuffer());
+  }
+
+  throw new Error(`Attachment download failed: ${response.status} ${response.statusText}`);
 }
 
 // ============================================================================
