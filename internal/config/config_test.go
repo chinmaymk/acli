@@ -221,6 +221,78 @@ func TestGetProfileMultipleNoDefault(t *testing.T) {
 	}
 }
 
+func TestEnvOverrideAPIToken(t *testing.T) {
+	tmpDir, cleanup := setupTestConfig(t)
+	defer cleanup()
+
+	writeTestConfig(t, tmpDir, &Config{
+		DefaultProfile: "jira",
+		Profiles: map[string]Profile{
+			"jira": {Name: "jira", APIToken: "file-token", Email: "user@example.com"},
+		},
+	})
+
+	t.Setenv("ACLI_JIRA_API_TOKEN", "env-token")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	p := cfg.Profiles["jira"]
+	if p.APIToken != "env-token" {
+		t.Errorf("expected env-token, got %q", p.APIToken)
+	}
+	if p.Email != "user@example.com" {
+		t.Errorf("email should be unchanged, got %q", p.Email)
+	}
+}
+
+func TestEnvOverrideDoesNotAffectOtherProfiles(t *testing.T) {
+	tmpDir, cleanup := setupTestConfig(t)
+	defer cleanup()
+
+	writeTestConfig(t, tmpDir, &Config{
+		Profiles: map[string]Profile{
+			"jira":      {Name: "jira", APIToken: "jira-file-token"},
+			"bitbucket": {Name: "bitbucket", APIToken: "bb-file-token"},
+		},
+	})
+
+	t.Setenv("ACLI_JIRA_API_TOKEN", "jira-env-token")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Profiles["jira"].APIToken != "jira-env-token" {
+		t.Errorf("expected jira-env-token, got %q", cfg.Profiles["jira"].APIToken)
+	}
+	if cfg.Profiles["bitbucket"].APIToken != "bb-file-token" {
+		t.Errorf("expected bb-file-token, got %q", cfg.Profiles["bitbucket"].APIToken)
+	}
+}
+
+func TestEnvOverrideEmail(t *testing.T) {
+	tmpDir, cleanup := setupTestConfig(t)
+	defer cleanup()
+
+	writeTestConfig(t, tmpDir, &Config{
+		Profiles: map[string]Profile{
+			"jira": {Name: "jira", Email: "file@example.com", APIToken: "tok"},
+		},
+	})
+
+	t.Setenv("ACLI_JIRA_EMAIL", "env@example.com")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Profiles["jira"].Email != "env@example.com" {
+		t.Errorf("expected env@example.com, got %q", cfg.Profiles["jira"].Email)
+	}
+}
+
 func TestLoadInvalidJSON(t *testing.T) {
 	tmpDir, cleanup := setupTestConfig(t)
 	defer cleanup()
