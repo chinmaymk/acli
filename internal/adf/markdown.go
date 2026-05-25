@@ -62,21 +62,15 @@ func markdownToADF(markdown string) map[string]interface{} {
 			continue
 		}
 
-		if strings.HasPrefix(line, "#### ") {
-			content = append(content, heading(4, strings.TrimPrefix(line, "#### ")))
-			continue
-		}
-		if strings.HasPrefix(line, "### ") {
-			content = append(content, heading(3, strings.TrimPrefix(line, "### ")))
-			continue
-		}
-		if strings.HasPrefix(line, "## ") {
-			content = append(content, heading(2, strings.TrimPrefix(line, "## ")))
-			continue
-		}
-		if strings.HasPrefix(line, "# ") {
-			content = append(content, heading(1, strings.TrimPrefix(line, "# ")))
-			continue
+		if len(line) > 0 && line[0] == '#' {
+			level := 0
+			for level < len(line) && line[level] == '#' {
+				level++
+			}
+			if level >= 1 && level <= 6 && level < len(line) && line[level] == ' ' {
+				content = append(content, heading(level, line[level+1:]))
+				continue
+			}
 		}
 
 		if strings.HasPrefix(line, "| ") && strings.HasSuffix(line, "|") {

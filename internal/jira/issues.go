@@ -143,7 +143,8 @@ func (c *Client) UpdateIssueComment(issueIdOrKey, commentId string, body interfa
 	return &result, nil
 }
 
-// ReplyToComment posts a threaded reply to an existing comment using Jira's internal GraphQL API.
+// ReplyToComment posts a threaded reply to an existing comment using Jira Cloud's
+// internal GraphQL API. Cloud-only: relies on the /gateway/api/graphql endpoint.
 func (c *Client) ReplyToComment(issueIdOrKey, parentCommentId string, body interface{}) (*Comment, error) {
 	issue, err := c.GetIssue(issueIdOrKey, nil, nil)
 	if err != nil {
@@ -222,6 +223,9 @@ func (c *Client) getCloudId() (string, error) {
 	err := c.Get("/_edge/tenant_info", nil, &result)
 	if err != nil {
 		return "", err
+	}
+	if result.CloudId == "" {
+		return "", fmt.Errorf("tenant_info response missing cloudId (Server/DC instance?)")
 	}
 	return result.CloudId, nil
 }

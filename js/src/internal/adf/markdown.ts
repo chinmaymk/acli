@@ -62,7 +62,10 @@ export function markdownToADF(md: string): ADFDocument {
 
     if (line.includes('|') && line.trim() !== '') {
       const next = lines[i + 1] ?? '';
-      const hasSeparator = /^\|?\s*[-:]+/.test(next);
+      // A real Markdown table separator row must contain a `|` AND consist only of
+      // pipes/dashes/colons/whitespace. Without the `|` requirement, a bullet list
+      // line like `- foo` after a `|`-containing line gets misparsed as a table.
+      const hasSeparator = next.includes('|') && /^[\s|:-]+$/.test(next);
       const nextIsTableRow = next.includes('|') && next.trim() !== '';
       if (hasSeparator || nextIsTableRow) {
         const tableRows: ADFNode[] = [];

@@ -627,8 +627,9 @@ export function registerJiraCommands(yargs: Argv): Argv {
                   async (_a) => {
               const argv = _a as Partial<JiraArgv> as JiraArgv;
                     const client = getJiraClient(argv);
-                    await jiraIssues.replyToComment(client, argv['issue-key'], argv['parent-comment-id'], markdownToADF(argv.body));
-                    console.log(`Reply added to comment ${argv['parent-comment-id']} on ${argv['issue-key']}`);
+                    const reply = await jiraIssues.replyToComment(client, argv['issue-key'], argv['parent-comment-id'], markdownToADF(argv.body));
+                    const replyId = reply.id ?? '';
+                    outputResult(argv, 'created', replyId, `Reply ${replyId} added to ${argv['parent-comment-id']} on ${argv['issue-key']}`, reply);
                   }
                 ),
             () => {}

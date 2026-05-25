@@ -44,7 +44,12 @@ export function buildURL(base: string, urlPath: string, query?: Record<string, s
   return qs ? `${full}?${qs}` : full;
 }
 
-function authHeader(client: JiraClient): string {
+/**
+ * Builds the Authorization header value for the given client.
+ * Basic auth (email + API token) when an email is configured, otherwise
+ * Bearer auth (OAuth 2.0 / scoped tokens).
+ */
+export function authHeader(client: JiraClient): string {
   if (client.email) {
     const encoded = Buffer.from(`${client.email}:${client.apiToken}`).toString('base64');
     return `Basic ${encoded}`;
