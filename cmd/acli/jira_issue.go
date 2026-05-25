@@ -577,21 +577,7 @@ var jiraIssueCommentAddCmd = &cobra.Command{
 
 		bodyText, _ := cmd.Flags().GetString("body")
 
-		adfBody := map[string]interface{}{
-			"type":    "doc",
-			"version": 1,
-			"content": []interface{}{
-				map[string]interface{}{
-					"type": "paragraph",
-					"content": []interface{}{
-						map[string]interface{}{
-							"type": "text",
-							"text": bodyText,
-						},
-					},
-				},
-			},
-		}
+		adfBody := adf.MarkdownToADF(bodyText)
 
 		comment, err := client.AddIssueComment(args[0], adfBody, nil)
 		if err != nil {
@@ -599,6 +585,31 @@ var jiraIssueCommentAddCmd = &cobra.Command{
 		}
 
 		return outputResult(cmd, "created", comment.ID, fmt.Sprintf("Comment %s added to %s", comment.ID, args[0]), comment)
+	},
+}
+
+// --- issue comment reply ---
+
+var jiraIssueCommentReplyCmd = &cobra.Command{
+	Use:   "reply <issue-key> <parent-comment-id>",
+	Short: "Reply to a comment in a thread",
+	Args:  cobra.ExactArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		client, err := getJiraClient(cmd)
+		if err != nil {
+			return err
+		}
+
+		bodyText, _ := cmd.Flags().GetString("body")
+
+		adfBody := adf.MarkdownToADF(bodyText)
+
+		comment, err := client.ReplyToComment(args[0], args[1], adfBody)
+		if err != nil {
+			return err
+		}
+
+		return outputResult(cmd, "created", comment.ID, fmt.Sprintf("Reply %s added to %s (thread parent: %s)", comment.ID, args[0], args[1]), comment)
 	},
 }
 
@@ -1286,6 +1297,10 @@ func init() {
 	jiraIssueCommentAddCmd.Flags().String("body", "", "Comment body text (required)")
 	_ = jiraIssueCommentAddCmd.MarkFlagRequired("body")
 
+	// comment reply flags
+	jiraIssueCommentReplyCmd.Flags().String("body", "", "Reply body text (required)")
+	_ = jiraIssueCommentReplyCmd.MarkFlagRequired("body")
+
 	// worklog list flags
 	jiraIssueWorklogListCmd.Flags().Int("max-results", 50, "Maximum number of results per page")
 	jiraIssueWorklogListCmd.Flags().Int("start-at", 0, "Index of the first result")
@@ -1322,6 +1337,7 @@ func init() {
 	// Wire comment subcommands
 	jiraIssueCommentCmd.AddCommand(jiraIssueCommentListCmd)
 	jiraIssueCommentCmd.AddCommand(jiraIssueCommentAddCmd)
+	jiraIssueCommentCmd.AddCommand(jiraIssueCommentReplyCmd)
 	jiraIssueCommentCmd.AddCommand(jiraIssueCommentGetCmd)
 	jiraIssueCommentCmd.AddCommand(jiraIssueCommentDeleteCmd)
 
