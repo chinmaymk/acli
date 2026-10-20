@@ -109,6 +109,28 @@ Profiles are stored in `~/.config/acli/config.json` (created automatically by `c
 }
 ```
 
+### Environment Variable Overrides
+
+Profile fields can be overridden at runtime using environment variables, without modifying `config.json`. This is useful for secret managers (e.g. 1Password, Vault) or CI environments where credentials should not live on disk.
+
+Variable naming convention: `ACLI_<PROFILE>_<FIELD>` where the profile name is uppercased.
+
+| Variable | Overrides |
+|---|---|
+| `ACLI_<PROFILE>_API_TOKEN` | `api_token` |
+| `ACLI_<PROFILE>_EMAIL` | `email` |
+| `ACLI_<PROFILE>_ATLASSIAN_URL` | `atlassian_url` |
+
+Examples for a profile named `jira`:
+
+```bash
+export ACLI_JIRA_API_TOKEN=your-token
+export ACLI_JIRA_EMAIL=you@example.com
+acli jira issue list
+```
+
+Environment variables take precedence over values in `config.json`. Non-overridden fields (e.g. `defaults`) continue to be read from the config file as normal.
+
 ### Auth Mode
 
 ACLI authenticates using Basic Auth (`email:api_token`) with personal API tokens. Use different profiles to configure separate credentials for each product (e.g., one profile for Jira/Confluence and another for Bitbucket).

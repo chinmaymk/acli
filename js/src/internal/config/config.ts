@@ -45,7 +45,29 @@ export function load(): Config {
   } catch (err) {
     throw new Error(`parsing config: ${(err as Error).message}`);
   }
+  applyEnvOverrides(cfg);
   return cfg;
+}
+
+// applyEnvOverrides overlays ACLI_<PROFILE>_* environment variables onto each
+// profile. Variable names use uppercased profile names, e.g. for profile "jira":
+//
+//   ACLI_JIRA_API_TOKEN
+//   ACLI_JIRA_EMAIL
+//   ACLI_JIRA_ATLASSIAN_URL
+//
+// Env vars take precedence over values in config.json.
+function applyEnvOverrides(cfg: Config): void {
+  for (const name of Object.keys(cfg.profiles)) {
+    const prefix = `ACLI_${name.toUpperCase()}_`;
+    const p = cfg.profiles[name];
+    const token = process.env[`${prefix}API_TOKEN`];
+    const email = process.env[`${prefix}EMAIL`];
+    const url = process.env[`${prefix}ATLASSIAN_URL`];
+    if (token) p.api_token = token;
+    if (email) p.email = email;
+    if (url) p.atlassian_url = url;
+  }
 }
 
 export function save(config: Config): void {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 type Defaults struct {
@@ -53,7 +54,32 @@ func Load() (*Config, error) {
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("parsing config: %w", err)
 	}
+	cfg.applyEnvOverrides()
 	return &cfg, nil
+}
+
+// applyEnvOverrides overlays ACLI_<PROFILE>_* environment variables onto each
+// profile. Variable names are uppercased profile names, e.g. for profile "jira":
+//
+//	ACLI_JIRA_API_TOKEN
+//	ACLI_JIRA_EMAIL
+//	ACLI_JIRA_ATLASSIAN_URL
+//
+// Env vars take precedence over values in config.json.
+func (c *Config) applyEnvOverrides() {
+	for name, p := range c.Profiles {
+		prefix := "ACLI_" + strings.ToUpper(name) + "_"
+		if v := os.Getenv(prefix + "API_TOKEN"); v != "" {
+			p.APIToken = v
+		}
+		if v := os.Getenv(prefix + "EMAIL"); v != "" {
+			p.Email = v
+		}
+		if v := os.Getenv(prefix + "ATLASSIAN_URL"); v != "" {
+			p.AtlassianURL = v
+		}
+		c.Profiles[name] = p
+	}
 }
 
 func (c *Config) Save() error {
