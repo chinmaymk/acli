@@ -14,6 +14,7 @@ import * as jiraAgile from '../internal/jira/agile.js';
 import * as jiraAdmin from '../internal/jira/admin.js';
 import * as jiraSchemes from '../internal/jira/schemes.js';
 import { render as renderADF } from '../internal/adf/render.js';
+import { writeFileSync } from 'node:fs';
 import type { Argv } from 'yargs';
 import type { ADFDocument, JsonBody } from '../internal/types.js';
 
@@ -158,6 +159,7 @@ interface JiraArgv {
   'end-date': string;
   'assignee-type': string;
   'delete-subtasks': boolean;
+  dest: string;
 
   // project — single key (most commands). The createmeta handler uses a
   // local variant that accepts string[].
@@ -3261,6 +3263,25 @@ export function registerJiraCommands(yargs: Argv): Argv {
               const client = getJiraClient(argv);
               const meta = await jiraAdmin.getAttachmentMeta(client);
               outputJSON(meta);
+            }
+          )
+
+          .command(
+            'download <id>',
+            'Download an attachment',
+            (y2) => y2
+              .positional('id', { type: 'string' })
+              .option('dest', { type: 'string', describe: 'Destination file path' }),
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
+              const client = getJiraClient(argv);
+
+              const att = await jiraAdmin.getAttachment(client, argv.id);
+              const dest = argv.dest || att.filename || argv.id;
+
+              const data = await jiraAdmin.downloadAttachmentContent(client, argv.id);
+              writeFileSync(dest, data);
+              console.log(`Downloaded: ${dest} (${data.length} bytes)`);
             }
           ),
       () => {}
