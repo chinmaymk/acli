@@ -186,6 +186,16 @@ var jiraIssueGetCmd = &cobra.Command{
 	},
 }
 
+// namedRefs converts names into the [{"name": ...}] shape Jira expects for
+// version and component fields.
+func namedRefs(names []string) []map[string]interface{} {
+	refs := make([]map[string]interface{}, len(names))
+	for i, n := range names {
+		refs[i] = map[string]interface{}{"name": n}
+	}
+	return refs
+}
+
 // --- issue create ---
 
 var jiraIssueCreateCmd = &cobra.Command{
@@ -211,6 +221,8 @@ var jiraIssueCreateCmd = &cobra.Command{
 		priority, _ := cmd.Flags().GetString("priority")
 		labels, _ := cmd.Flags().GetStringSlice("labels")
 		components, _ := cmd.Flags().GetStringSlice("components")
+		fixVersions, _ := cmd.Flags().GetStringSlice("fix-versions")
+		affectsVersions, _ := cmd.Flags().GetStringSlice("affects-versions")
 
 		fields := map[string]interface{}{
 			"project":   map[string]interface{}{"key": project},
@@ -254,6 +266,14 @@ var jiraIssueCreateCmd = &cobra.Command{
 				comps[i] = map[string]interface{}{"name": c}
 			}
 			fields["components"] = comps
+		}
+
+		if len(fixVersions) > 0 {
+			fields["fixVersions"] = namedRefs(fixVersions)
+		}
+
+		if len(affectsVersions) > 0 {
+			fields["versions"] = namedRefs(affectsVersions)
 		}
 
 		details := &jira.IssueUpdateDetails{
@@ -324,6 +344,14 @@ var jiraIssueEditCmd = &cobra.Command{
 				comps[i] = map[string]interface{}{"name": c}
 			}
 			fields["components"] = comps
+		}
+		if cmd.Flags().Changed("fix-versions") {
+			v, _ := cmd.Flags().GetStringSlice("fix-versions")
+			fields["fixVersions"] = namedRefs(v)
+		}
+		if cmd.Flags().Changed("affects-versions") {
+			v, _ := cmd.Flags().GetStringSlice("affects-versions")
+			fields["versions"] = namedRefs(v)
 		}
 
 		if len(fields) == 0 {
@@ -1259,6 +1287,8 @@ func init() {
 	jiraIssueCreateCmd.Flags().String("priority", "", "Priority name")
 	jiraIssueCreateCmd.Flags().StringSlice("labels", nil, "Labels")
 	jiraIssueCreateCmd.Flags().StringSlice("components", nil, "Component names")
+	jiraIssueCreateCmd.Flags().StringSlice("fix-versions", nil, "Fix version names")
+	jiraIssueCreateCmd.Flags().StringSlice("affects-versions", nil, "Affects version names")
 	_ = jiraIssueCreateCmd.MarkFlagRequired("summary")
 
 	// issue edit flags
@@ -1268,6 +1298,8 @@ func init() {
 	jiraIssueEditCmd.Flags().String("priority", "", "Priority name")
 	jiraIssueEditCmd.Flags().StringSlice("labels", nil, "Labels")
 	jiraIssueEditCmd.Flags().StringSlice("components", nil, "Component names")
+	jiraIssueEditCmd.Flags().StringSlice("fix-versions", nil, "Fix version names")
+	jiraIssueEditCmd.Flags().StringSlice("affects-versions", nil, "Affects version names")
 
 	// issue delete flags
 	jiraIssueDeleteCmd.Flags().Bool("delete-subtasks", false, "Also delete subtasks")

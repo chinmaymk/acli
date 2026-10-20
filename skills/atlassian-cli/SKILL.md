@@ -66,6 +66,7 @@ acli jira issue list --jql "project = PROJ AND status = Open"
 acli jira issue get PROJ-123
 acli jira issue create --project PROJ --type Task --summary "Fix the bug"
 acli jira issue update PROJ-123 --summary "Updated summary"
+acli jira issue create --project PROJ --summary "Bug" --fix-versions 1.2.0 --affects-versions 1.1.0
 acli jira issue delete PROJ-123
 acli jira issue assign PROJ-123 --assignee <account-id>
 acli jira issue transition PROJ-123 --transition "In Progress"

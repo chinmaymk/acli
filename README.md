@@ -141,23 +141,6 @@ acli version
 
 Short aliases are available: `j` for jira, `c`/`conf` for confluence, `bb` for bitbucket.
 
-### Setting Fix Version / Affects Version
-
-`jira issue create` and `jira issue edit` don't have flags for `fixVersions` or `versions` (Affects Version). Until they do, call the Jira REST API directly with the same credentials as your profile:
-
-```bash
-# Set Fix Version (and Affects Version) on an existing issue
-curl -sS -u "you@example.com:$JIRA_API_TOKEN" \
-  -X PUT -H "Content-Type: application/json" \
-  "https://your-instance.atlassian.net/rest/api/3/issue/PROJ-123" \
-  -d '{"fields":{"fixVersions":[{"name":"1.2.0"}],"versions":[{"name":"1.1.0"}]}}'
-
-# Or add without replacing what's already set
-  -d '{"update":{"fixVersions":[{"add":{"name":"1.2.0"}}]}}'
-```
-
-Same `fields` payload works with `POST /rest/api/3/issue` at creation time. Versions must already exist in the project (`acli jira version create`, `acli jira project versions PROJ`).
-
 ## API Coverage
 
 ### Jira
