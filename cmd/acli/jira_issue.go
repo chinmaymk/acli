@@ -1,6 +1,7 @@
 package acli
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -196,6 +197,48 @@ func namedRefs(names []string) []map[string]interface{} {
 	return refs
 }
 
+// extraFields collects fields from --fields-json (a JSON object, or @file) and
+// repeated --field key=value flags. Values are parsed as JSON when valid,
+// otherwise used as plain strings. --field overrides --fields-json.
+func extraFields(cmd *cobra.Command) (map[string]interface{}, error) {
+	out := map[string]interface{}{}
+	if raw, _ := cmd.Flags().GetString("fields-json"); raw != "" {
+		if strings.HasPrefix(raw, "@") {
+			b, err := os.ReadFile(raw[1:])
+			if err != nil {
+				return nil, fmt.Errorf("reading --fields-json file: %w", err)
+			}
+			raw = string(b)
+		}
+		if err := json.Unmarshal([]byte(raw), &out); err != nil {
+			return nil, fmt.Errorf("invalid --fields-json (want a JSON object): %w", err)
+		}
+	}
+	kvs, _ := cmd.Flags().GetStringArray("field")
+	for _, kv := range kvs {
+		k, v, ok := strings.Cut(kv, "=")
+		if !ok || k == "" {
+			return nil, fmt.Errorf("invalid --field %q (want key=value)", kv)
+		}
+		var parsed interface{}
+		if json.Unmarshal([]byte(v), &parsed) != nil {
+			parsed = v
+		}
+		out[k] = parsed
+	}
+	return out, nil
+}
+
+// mergeExtraFields adds extra fields without overriding fields already set by
+// dedicated flags.
+func mergeExtraFields(fields, extra map[string]interface{}) {
+	for k, v := range extra {
+		if _, exists := fields[k]; !exists {
+			fields[k] = v
+		}
+	}
+}
+
 // --- issue create ---
 
 var jiraIssueCreateCmd = &cobra.Command{
@@ -276,6 +319,12 @@ var jiraIssueCreateCmd = &cobra.Command{
 			fields["versions"] = namedRefs(affectsVersions)
 		}
 
+		extra, err := extraFields(cmd)
+		if err != nil {
+			return err
+		}
+		mergeExtraFields(fields, extra)
+
 		details := &jira.IssueUpdateDetails{
 			Fields: fields,
 		}
@@ -353,6 +402,12 @@ var jiraIssueEditCmd = &cobra.Command{
 			v, _ := cmd.Flags().GetStringSlice("affects-versions")
 			fields["versions"] = namedRefs(v)
 		}
+
+		extra, err := extraFields(cmd)
+		if err != nil {
+			return err
+		}
+		mergeExtraFields(fields, extra)
 
 		if len(fields) == 0 {
 			return fmt.Errorf("no fields specified to update")
@@ -1289,6 +1344,8 @@ func init() {
 	jiraIssueCreateCmd.Flags().StringSlice("components", nil, "Component names")
 	jiraIssueCreateCmd.Flags().StringSlice("fix-versions", nil, "Fix version names")
 	jiraIssueCreateCmd.Flags().StringSlice("affects-versions", nil, "Affects version names")
+	jiraIssueCreateCmd.Flags().StringArray("field", nil, "Set any field as key=value; value is JSON if valid (repeatable). See 'issue createmeta' for field IDs")
+	jiraIssueCreateCmd.Flags().String("fields-json", "", "Fields as a JSON object, or @file; flags above take precedence")
 	_ = jiraIssueCreateCmd.MarkFlagRequired("summary")
 
 	// issue edit flags
@@ -1300,6 +1357,8 @@ func init() {
 	jiraIssueEditCmd.Flags().StringSlice("components", nil, "Component names")
 	jiraIssueEditCmd.Flags().StringSlice("fix-versions", nil, "Fix version names")
 	jiraIssueEditCmd.Flags().StringSlice("affects-versions", nil, "Affects version names")
+	jiraIssueEditCmd.Flags().StringArray("field", nil, "Set any field as key=value; value is JSON if valid (repeatable). See 'issue editmeta' for field IDs")
+	jiraIssueEditCmd.Flags().String("fields-json", "", "Fields as a JSON object, or @file; flags above take precedence")
 
 	// issue delete flags
 	jiraIssueDeleteCmd.Flags().Bool("delete-subtasks", false, "Also delete subtasks")
