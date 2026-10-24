@@ -44,7 +44,12 @@ export function buildURL(base: string, urlPath: string, query?: Record<string, s
   return qs ? `${full}?${qs}` : full;
 }
 
-function authHeader(client: JiraClient): string {
+/**
+ * Builds the Authorization header value for the given client.
+ * Basic auth (email + API token) when an email is configured, otherwise
+ * Bearer auth (OAuth 2.0 / scoped tokens).
+ */
+export function authHeader(client: JiraClient): string {
   if (client.email) {
     const encoded = Buffer.from(`${client.email}:${client.apiToken}`).toString('base64');
     return `Basic ${encoded}`;
@@ -240,4 +245,17 @@ export async function getRaw(
   const url = buildURL(client.baseURL, urlPath, query);
   const response = await doRequest(client, 'GET', url);
   return response.text();
+}
+
+/**
+ * GET request that returns the response body as a Buffer (binary-safe).
+ */
+export async function getBuffer(
+  client: JiraClient,
+  urlPath: string,
+  query?: Record<string, string>,
+): Promise<Buffer> {
+  const url = buildURL(client.baseURL, urlPath, query);
+  const response = await doRequest(client, 'GET', url);
+  return Buffer.from(await response.arrayBuffer());
 }

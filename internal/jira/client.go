@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/chinmaymk/acli/internal/config"
 )
@@ -73,11 +74,14 @@ func (c *Client) newRequest(method, path string, body interface{}) (*http.Reques
 
 	var bodyReader io.Reader
 	if body != nil {
-		data, err := json.Marshal(body)
-		if err != nil {
+		var buf bytes.Buffer
+		enc := json.NewEncoder(&buf)
+		enc.SetEscapeHTML(false)
+		if err := enc.Encode(body); err != nil {
 			return nil, fmt.Errorf("marshaling request body: %w", err)
 		}
-		bodyReader = bytes.NewReader(data)
+		escaped := escapeNonASCII(buf.Bytes())
+		bodyReader = bytes.NewReader(escaped)
 	}
 
 	req, err := http.NewRequest(method, u, bodyReader)
@@ -87,7 +91,7 @@ func (c *Client) newRequest(method, path string, body interface{}) (*http.Reques
 
 	c.setAuth(req)
 	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Content-Type", "application/json; charset=utf-8")
 	}
 	req.Header.Set("Accept", "application/json")
 
@@ -236,4 +240,46 @@ func (c *Client) GetRaw(path string, query url.Values) ([]byte, error) {
 		return nil, apiErr
 	}
 	return io.ReadAll(resp.Body)
+}
+
+func escapeNonASCII(data []byte) []byte {
+	var buf bytes.Buffer
+	inString := false
+	esc := false
+	for i := 0; i < len(data); i++ {
+		b := data[i]
+		if esc {
+			buf.WriteByte(b)
+			esc = false
+			continue
+		}
+		if b == '\\' && inString {
+			buf.WriteByte(b)
+			esc = true
+			continue
+		}
+		if b == '"' {
+			inString = !inString
+			buf.WriteByte(b)
+			continue
+		}
+		if inString && b > 127 {
+			r, size := utf8.DecodeRune(data[i:])
+			if r == utf8.RuneError || size <= 0 {
+				buf.WriteByte(b)
+				continue
+			}
+			if r <= 0xFFFF {
+				fmt.Fprintf(&buf, "\\u%04x", r)
+			} else {
+				hi := 0xD800 + ((r-0x10000)>>10)&0x3FF
+				lo := 0xDC00 + (r-0x10000)&0x3FF
+				fmt.Fprintf(&buf, "\\u%04x\\u%04x", hi, lo)
+			}
+			i += size - 1
+			continue
+		}
+		buf.WriteByte(b)
+	}
+	return buf.Bytes()
 }

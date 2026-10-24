@@ -139,7 +139,7 @@ func TestPost(t *testing.T) {
 		if r.Method != "POST" {
 			t.Errorf("expected POST, got %s", r.Method)
 		}
-		if r.Header.Get("Content-Type") != "application/json" {
+		if r.Header.Get("Content-Type") != "application/json; charset=utf-8" {
 			t.Error("expected application/json content type")
 		}
 		var body map[string]string
@@ -308,7 +308,7 @@ func TestDeleteWithBody(t *testing.T) {
 		if r.Method != "DELETE" {
 			t.Errorf("expected DELETE, got %s", r.Method)
 		}
-		if r.Header.Get("Content-Type") != "application/json" {
+		if r.Header.Get("Content-Type") != "application/json; charset=utf-8" {
 			t.Error("expected application/json content type")
 		}
 		w.Header().Set("Content-Type", "application/json")

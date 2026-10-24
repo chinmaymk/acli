@@ -14,6 +14,8 @@ import * as jiraAgile from '../internal/jira/agile.js';
 import * as jiraAdmin from '../internal/jira/admin.js';
 import * as jiraSchemes from '../internal/jira/schemes.js';
 import { render as renderADF } from '../internal/adf/render.js';
+import { markdownToADF } from '../internal/adf/markdown.js';
+import { writeFileSync } from 'node:fs';
 import type { Argv } from 'yargs';
 import type { ADFDocument, JsonBody } from '../internal/types.js';
 
@@ -123,6 +125,7 @@ interface JiraArgv {
   'issue-key': string;
   'issue-keys': string[];
   'comment-id': string;
+  'parent-comment-id': string;
   'worklog-id': string;
   'link-id': string;
   'project-key': string;
@@ -158,6 +161,7 @@ interface JiraArgv {
   'end-date': string;
   'assignee-type': string;
   'delete-subtasks': boolean;
+  dest: string;
 
   // project — single key (most commands). The createmeta handler uses a
   // local variant that accepts string[].
@@ -571,7 +575,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
                   async (_a) => {
               const argv = _a as Partial<JiraArgv> as JiraArgv;
                     const client = getJiraClient(argv);
-                    const comment = await jiraIssues.addIssueComment(client, argv['issue-key'], adfDoc(argv.body), undefined);
+                    const comment = await jiraIssues.addIssueComment(client, argv['issue-key'], markdownToADF(argv.body), undefined);
                     outputResult(argv, 'created', comment.id!, `Comment ${comment.id} added to ${argv['issue-key']}`, comment);
                   }
                 )
@@ -608,6 +612,24 @@ export function registerJiraCommands(yargs: Argv): Argv {
                     const client = getJiraClient(argv);
                     await jiraIssues.deleteIssueComment(client, argv['issue-key'], argv['comment-id']);
                     outputResult(argv, 'deleted', argv['comment-id'], `Comment ${argv['comment-id']} deleted from ${argv['issue-key']}`, null);
+                  }
+                )
+
+                .command(
+                  'reply <issue-key> <parent-comment-id>',
+                  'Reply to a comment (threaded)',
+                  (y3) =>
+                    y3
+                      .positional('issue-key', { type: 'string' })
+                      .positional('parent-comment-id', { type: 'string' })
+                      .option('body', { type: 'string', description: 'Reply body text (required)' })
+                      .demandOption(['body']),
+                  async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
+                    const client = getJiraClient(argv);
+                    const reply = await jiraIssues.replyToComment(client, argv['issue-key'], argv['parent-comment-id'], markdownToADF(argv.body));
+                    const replyId = reply.id ?? '';
+                    outputResult(argv, 'created', replyId, `Reply ${replyId} added to ${argv['parent-comment-id']} on ${argv['issue-key']}`, reply);
                   }
                 ),
             () => {}
@@ -3261,6 +3283,25 @@ export function registerJiraCommands(yargs: Argv): Argv {
               const client = getJiraClient(argv);
               const meta = await jiraAdmin.getAttachmentMeta(client);
               outputJSON(meta);
+            }
+          )
+
+          .command(
+            'download <id>',
+            'Download an attachment',
+            (y2) => y2
+              .positional('id', { type: 'string' })
+              .option('dest', { type: 'string', describe: 'Destination file path' }),
+            async (_a) => {
+              const argv = _a as Partial<JiraArgv> as JiraArgv;
+              const client = getJiraClient(argv);
+
+              const att = await jiraAdmin.getAttachment(client, argv.id);
+              const dest = argv.dest || att.filename || argv.id;
+
+              const data = await jiraAdmin.downloadAttachmentContent(client, argv.id);
+              writeFileSync(dest, data);
+              console.log(`Downloaded: ${dest} (${data.length} bytes)`);
             }
           ),
       () => {}
