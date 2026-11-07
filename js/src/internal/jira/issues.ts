@@ -1,6 +1,6 @@
-import { get, post, put, del, uploadFile } from './client.js';
+import { get, post, put, del, uploadFile, getRaw, buildURL } from './client.js';
 import type { JiraClient } from './client.js';
-import type { ADFNode, JsonBody, JsonValue } from '../types.js';
+import type { ADFNode, ADFDocument, JsonBody, JsonValue } from '../types.js';
 import type {
   Attachment,
   BulkIssueCreateRequest,
@@ -411,4 +411,73 @@ export async function bulkFetchIssues(
     body.fields = fields;
   }
   return await post(client, '/rest/api/3/issue/bulkfetch', body);
+}
+
+async function getCloudId(client: JiraClient): Promise<string> {
+  const raw = await getRaw(client, '/_edge/tenant_info');
+  const info = JSON.parse(raw) as { cloudId?: string };
+  if (!info.cloudId) {
+    throw new Error('Could not resolve cloudId from tenant_info');
+  }
+  return info.cloudId;
+}
+
+export async function replyToComment(
+  client: JiraClient,
+  issueIdOrKey: string,
+  parentCommentId: string,
+  body: ADFDocument,
+): Promise<void> {
+  const issue = await getIssue(client, issueIdOrKey);
+  const issueId = issue.id;
+  const cloudId = await getCloudId(client);
+  const ari = `ari:cloud:jira:${cloudId}:issue/${issueId}`;
+
+  const mutation = `mutation jira_addComment($input: JiraAddCommentInput!) {
+    jira {
+      addComment(input: $input) {
+        success
+        errors { message }
+      }
+    }
+  }`;
+
+  const variables = {
+    input: {
+      ari,
+      body,
+      threadParentId: parentCommentId,
+    },
+  };
+
+  const url = buildURL(client.baseURL, '/gateway/api/graphql');
+  const authToken = Buffer.from(`${client.email}:${client.apiToken}`).toString('base64');
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Basic ${authToken}`,
+    },
+    body: JSON.stringify({ query: mutation, variables }),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`GraphQL request failed (${response.status}): ${text}`);
+  }
+
+  const result = (await response.json()) as {
+    data?: { jira?: { addComment?: { success?: boolean; errors?: { message: string }[] } } };
+    errors?: { message: string }[];
+  };
+
+  if (result.errors && result.errors.length > 0) {
+    throw new Error(`GraphQL error: ${result.errors.map((e) => e.message).join(', ')}`);
+  }
+
+  const addComment = result.data?.jira?.addComment;
+  if (!addComment?.success) {
+    const msgs = addComment?.errors?.map((e) => e.message).join(', ') || 'unknown error';
+    throw new Error(`Failed to add reply: ${msgs}`);
+  }
 }

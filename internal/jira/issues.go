@@ -143,6 +143,89 @@ func (c *Client) UpdateIssueComment(issueIdOrKey, commentId string, body interfa
 	return &result, nil
 }
 
+// ReplyToComment posts a threaded reply to an existing comment using Jira's internal GraphQL API.
+func (c *Client) ReplyToComment(issueIdOrKey, parentCommentId string, body interface{}) (*Comment, error) {
+	issue, err := c.GetIssue(issueIdOrKey, nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("fetching issue for reply: %w", err)
+	}
+
+	cloudId, err := c.getCloudId()
+	if err != nil {
+		return nil, fmt.Errorf("fetching cloud ID: %w", err)
+	}
+
+	ari := fmt.Sprintf("ari:cloud:jira:%s:issue/%s", cloudId, issue.ID)
+
+	variables := map[string]interface{}{
+		"input": map[string]interface{}{
+			"issueId":        ari,
+			"threadParentId": parentCommentId,
+			"content": map[string]interface{}{
+				"version":   1,
+				"jsonValue": body,
+			},
+		},
+	}
+
+	gqlBody := map[string]interface{}{
+		"query": `mutation useSaveCommentRelayAddCommentMutation($input: JiraAddCommentInput!) {
+			jira {
+				addComment(input: $input) {
+					success
+					comment {
+						commentId
+					}
+				}
+			}
+		}`,
+		"variables": variables,
+	}
+
+	var gqlResult struct {
+		Data struct {
+			Jira struct {
+				AddComment struct {
+					Success bool `json:"success"`
+					Comment struct {
+						CommentID string `json:"commentId"`
+					} `json:"comment"`
+				} `json:"addComment"`
+			} `json:"jira"`
+		} `json:"data"`
+		Errors []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
+	}
+
+	err = c.Post("/gateway/api/graphql", gqlBody, &gqlResult)
+	if err != nil {
+		return nil, fmt.Errorf("GraphQL reply failed: %w", err)
+	}
+
+	if len(gqlResult.Errors) > 0 {
+		return nil, fmt.Errorf("GraphQL error: %s", gqlResult.Errors[0].Message)
+	}
+
+	if !gqlResult.Data.Jira.AddComment.Success {
+		return nil, fmt.Errorf("GraphQL reply returned success=false")
+	}
+
+	commentId := gqlResult.Data.Jira.AddComment.Comment.CommentID
+	return &Comment{ID: commentId}, nil
+}
+
+func (c *Client) getCloudId() (string, error) {
+	var result struct {
+		CloudId string `json:"cloudId"`
+	}
+	err := c.Get("/_edge/tenant_info", nil, &result)
+	if err != nil {
+		return "", err
+	}
+	return result.CloudId, nil
+}
+
 // DeleteIssueComment deletes a comment from an issue.
 func (c *Client) DeleteIssueComment(issueIdOrKey, commentId string) error {
 	return c.Delete(fmt.Sprintf("/rest/api/3/issue/%s/comment/%s", issueIdOrKey, commentId), nil)
