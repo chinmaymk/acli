@@ -79,6 +79,7 @@ acli jira issue link PROJ-123 PROJ-456 --type Blocks
 ### Search (`jira search` / `j s`)
 
 ```bash
+acli jira search "prepare monthly release notes" --project PROJ --mine --updated-since 30d -o json
 acli jira search "release notes" --project PROJ --mine --updated-since 30d -o json
 acli jira search "release notes" --project PROJ --mine --updated-since 30d --match any -o json
 acli jira search PROJ-123
@@ -86,7 +87,9 @@ acli jira search --assignee "$account_id" --updated-since 2w
 acli jira search --jql "assignee = currentUser() ORDER BY updated DESC" --max-results 25
 ```
 
-Use a few remembered words. ACLI searches Jira for all the words, treating punctuation as separators. The default is `--match all`. If a remembered-word search returns too few useful hits, the caller can retry with `--match any` and the same filters. ACLI broadens only the word conditions and only on request. An issue key performs an exact key search. Filters also work on their own. Use `--jql` for operators, exact phrases, and custom ordering.
+Start with the words you remember. The default `--match all` requires every word and treats punctuation as separators. Check the top five previews. If the intended ticket is missing, first retry with the most distinctive words from the original query and keep the same filters. For example, shorten `prepare monthly release notes` to `release notes`. If that still misses, consider an explicit `--match any` search. Each retry is a separate caller decision.
+
+An issue key performs an exact key search. Filters also work on their own. Use `--jql` for operators, exact phrases, and custom ordering.
 
 Word and filter searches return compact previews with the key, summary, status, and browser URL. Match-all promotes title matches within the retrieved results. Match-any first ranks by the number of distinct query words visible in the title and description, then promotes title matches among ties. A short excerpt appears when a search word occurs in the description. Pass `--fields` with `-o json` to request Jira issue fields instead of previews.
 
