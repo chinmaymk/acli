@@ -331,18 +331,52 @@ export async function getAccessibleProjectTypes(client: JiraClient): Promise<Pro
 export async function searchJQL(
   client: JiraClient,
   jql?: string,
-  startAt?: number,
+  startAt = 0,
   maxResults?: number,
   fields?: string[],
   expand?: string[],
+  all = false,
 ): Promise<SearchResults> {
   const q: Record<string, string> = {};
   if (jql) q.jql = jql;
-  if (startAt != null && startAt > 0) q.startAt = String(startAt);
+  if (startAt > 0) q.startAt = String(startAt);
   if (maxResults != null && maxResults > 0) q.maxResults = String(maxResults);
   if (fields && fields.length > 0) q.fields = fields.join(',');
   if (expand && expand.length > 0) q.expand = expand.join(',');
-  return await get(client, '/rest/api/3/search/jql', q);
+  const path = '/rest/api/3/search/jql';
+  const result = await get<SearchResults>(client, path, q);
+  if (!all) return result;
+  result.issues ??= [];
+
+  const seen = new Set<string>();
+  while (!result.isLast) {
+    const token = result.nextPageToken;
+    if (token) {
+      if (seen.has(token)) throw new Error('search returned a repeated nextPageToken');
+      seen.add(token);
+      delete q.startAt;
+      q.nextPageToken = token;
+    } else if (result.isLast === false) {
+      throw new Error('search returned isLast=false without a nextPageToken');
+    } else if (!seen.size && startAt + result.issues.length < (result.total ?? 0)) {
+      // Older responses use total and startAt instead of a cursor.
+      q.startAt = String(startAt + result.issues.length);
+    } else {
+      break;
+    }
+
+    const page = await get<SearchResults>(client, path, q);
+    result.issues.push(...(page.issues ?? []));
+    if (page.warningMessages) {
+      (result.warningMessages ??= []).push(...page.warningMessages);
+    }
+    result.nextPageToken = page.nextPageToken;
+    result.isLast = page.isLast;
+    if (!seen.size && !page.issues?.length && page.isLast === undefined && !page.nextPageToken) {
+      throw new Error('search returned an empty page before reaching total');
+    }
+  }
+  return result;
 }
 
 /**

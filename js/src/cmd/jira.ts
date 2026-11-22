@@ -282,17 +282,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
               }
 
               const fields = ['summary', 'issuetype', 'status', 'priority', 'assignee'];
-              let results = await jiraProjects.searchJQL(client, jql, argv.startAt, argv.maxResults, fields, undefined);
-
-              if (argv.all) {
-                let allIssues = results.issues;
-                while (allIssues.length < results.total) {
-                  const next = await jiraProjects.searchJQL(client, jql, argv.startAt + allIssues.length, argv.maxResults, fields, undefined);
-                  if (!next.issues || next.issues.length === 0) break;
-                  allIssues = allIssues.concat(next.issues);
-                }
-                results.issues = allIssues;
-              }
+              const results = await jiraProjects.searchJQL(client, jql, argv.startAt, argv.maxResults, fields, undefined, argv.all);
 
               if (isJSONOutput(argv)) { outputJSON(results); return; }
 
@@ -1681,15 +1671,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
       async (_a) => {
               const argv = _a as Partial<JiraArgv> as JiraArgv;
         const client = getJiraClient(argv);
-        let results = await jiraProjects.searchJQL(client, argv.jql, argv.startAt, argv.maxResults, argv.fields || [], undefined);
-
-        if (argv.all) {
-          while ((results.issues || []).length < results.total) {
-            const next = await jiraProjects.searchJQL(client, argv.jql, argv.startAt + results.issues.length, argv.maxResults, argv.fields || [], undefined);
-            if (!next.issues || next.issues.length === 0) break;
-            results.issues = results.issues.concat(next.issues);
-          }
-        }
+        const results = await jiraProjects.searchJQL(client, argv.jql, argv.startAt, argv.maxResults, argv.fields || [], undefined, argv.all);
 
         if (isJSONOutput(argv)) { outputJSON(results); return; }
 

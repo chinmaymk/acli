@@ -323,9 +323,11 @@ export interface TransitionsResponse {
 }
 
 export interface SearchResults {
-  startAt: number;
-  maxResults: number;
-  total: number;
+  nextPageToken?: string | null;
+  isLast?: boolean;
+  startAt?: number;
+  maxResults?: number;
+  total?: number;
   issues: IssueDetailed[];
   warningMessages?: string[];
 }

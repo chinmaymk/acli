@@ -58,24 +58,9 @@ var jiraIssueListCmd = &cobra.Command{
 		}
 
 		fields := []string{"summary", "issuetype", "status", "priority", "assignee"}
-		results, err := client.SearchJQL(jql, startAt, maxResults, fields, nil)
+		results, err := client.SearchJQL(jql, startAt, maxResults, fields, nil, all)
 		if err != nil {
 			return err
-		}
-
-		allIssues := results.Issues
-		if all {
-			for len(allIssues) < results.Total {
-				next, err := client.SearchJQL(jql, startAt+len(allIssues), maxResults, fields, nil)
-				if err != nil {
-					return err
-				}
-				if len(next.Issues) == 0 {
-					break
-				}
-				allIssues = append(allIssues, next.Issues...)
-			}
-			results.Issues = allIssues
 		}
 
 		if jsonOutput {

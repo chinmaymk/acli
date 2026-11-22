@@ -251,6 +251,8 @@ type TransitionsResponse struct {
 
 // SearchResults represents search results.
 type SearchResults struct {
+	NextPageToken   string          `json:"nextPageToken,omitempty"`
+	IsLast          *bool           `json:"isLast,omitempty"`
 	StartAt         int             `json:"startAt"`
 	MaxResults      int             `json:"maxResults"`
 	Total           int             `json:"total"`
