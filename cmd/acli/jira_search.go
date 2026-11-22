@@ -11,22 +11,33 @@ import (
 // --- Search command ---
 
 var jiraSearchCmd = &cobra.Command{
-	Use:     "search",
+	Use:     "search [text]",
+	Args:    cobra.MaximumNArgs(1),
 	Aliases: []string{"s"},
-	Short:   "Search issues using JQL",
+	Short:   "Find issues by words, issue key, filters, or JQL",
+	Example: `  acli jira search "release notes" --project DEMO --mine --updated-since 30d
+  acli jira search "release notes" --project DEMO --match any
+  acli jira search --jql 'status = Open'`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		match, _ := cmd.Flags().GetString("match")
+		jql, text, err := issueSearchQuery(cmd, args, match)
+		if err != nil {
+			return err
+		}
 		client, err := getJiraClient(cmd)
 		if err != nil {
 			return err
 		}
 
-		jql, _ := cmd.Flags().GetString("jql")
 		maxResults, _ := cmd.Flags().GetInt("max-results")
 		startAt, _ := cmd.Flags().GetInt("start-at")
 		fields, _ := cmd.Flags().GetStringSlice("fields")
 		all, _ := cmd.Flags().GetBool("all")
 
-		if len(fields) == 0 {
+		preview := !cmd.Flags().Changed("jql") && len(fields) == 0
+		if preview {
+			fields = []string{"summary", "status", "description"}
+		} else if len(fields) == 0 {
 			fields = []string{"summary"}
 		}
 
@@ -48,6 +59,23 @@ var jiraSearchCmd = &cobra.Command{
 			}
 		}
 
+		if preview {
+			items := issuePreviews(results.Issues, text, client.BaseURL, match)
+			if isJSONOutput(cmd) {
+				return outputJSON(struct {
+					*jira.SearchResults
+					Issues []issuePreview `json:"issues"`
+				}{results, items})
+			}
+			w := newTabWriter()
+			_, _ = fmt.Fprintln(w, "KEY\tSTATUS\tSUMMARY\tURL\tEXCERPT")
+			for _, item := range items {
+				_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", item.Key, item.Status, item.Summary, item.URL, item.Excerpt)
+			}
+			_ = w.Flush()
+			printPaginationHint(cmd, len(items), results.Total)
+			return nil
+		}
 		if isJSONOutput(cmd) {
 			return outputJSON(results)
 		}
@@ -268,8 +296,15 @@ var jiraFilterDeleteCmd = &cobra.Command{
 
 func init() {
 	// Search
-	jiraSearchCmd.Flags().String("jql", "", "JQL query (required)")
-	_ = jiraSearchCmd.MarkFlagRequired("jql")
+	jiraSearchCmd.Flags().String("match", "all", "Match all or any search words; filters always apply")
+	jiraSearchCmd.Flags().String("jql", "", "Advanced JQL query")
+	jiraSearchCmd.Flags().String("project", "", "Limit to a Jira project key")
+	jiraSearchCmd.Flags().String("assignee", "", "Limit to an assignee account ID")
+	jiraSearchCmd.Flags().Bool("mine", false, "Limit to issues assigned to the current user")
+	jiraSearchCmd.Flags().String("updated-since", "", "Limit to issues updated within a duration such as 30d or 2w")
+	for _, flag := range []string{"project", "assignee", "mine", "updated-since", "match"} {
+		jiraSearchCmd.MarkFlagsMutuallyExclusive("jql", flag)
+	}
 	jiraSearchCmd.Flags().Int("max-results", 50, "Maximum number of results per page")
 	jiraSearchCmd.Flags().Int("start-at", 0, "Index of the first result")
 	jiraSearchCmd.Flags().StringSlice("fields", nil, "Fields to return")
@@ -290,7 +325,7 @@ func init() {
 
 	jiraFilterCreateCmd.Flags().String("name", "", "Filter name (required)")
 	_ = jiraFilterCreateCmd.MarkFlagRequired("name")
-	jiraFilterCreateCmd.Flags().String("jql", "", "JQL query (required)")
+	jiraFilterCreateCmd.Flags().String("jql", "", "Advanced JQL query")
 	_ = jiraFilterCreateCmd.MarkFlagRequired("jql")
 	jiraFilterCreateCmd.Flags().String("description", "", "Filter description")
 	jiraFilterCreateCmd.Flags().Bool("favourite", false, "Mark as favourite")

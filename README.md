@@ -119,6 +119,8 @@ ACLI authenticates using Basic Auth (`email:api_token`) with personal API tokens
 # Jira
 acli jira issue list
 acli jira issue get PROJ-123
+acli jira search "release notes" --project PROJ            # Match all words (default)
+acli jira search "release notes" --project PROJ --match any # Broaden on request
 acli jira issue create
 acli jira project list
 acli jira board list
