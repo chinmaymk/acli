@@ -245,6 +245,7 @@ export interface Watches {
 }
 
 export interface IssueFields {
+  [key: `customfield_${string}`]: JsonValue | undefined;
   summary?: string;
   description?: ADFNode;
   issuetype?: IssueType;

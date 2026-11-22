@@ -2,6 +2,7 @@ package jira
 
 import (
 	"encoding/json"
+	"reflect"
 	"testing"
 )
 
@@ -251,5 +252,33 @@ func TestSearchResultsDeserialization(t *testing.T) {
 	}
 	if result.Issues[0].Key != "TEST-1" {
 		t.Errorf("unexpected key: %s", result.Issues[0].Key)
+	}
+}
+
+func TestIssueCustomFieldsRoundTrip(t *testing.T) {
+	raw := `{"summary":"Issue","customfield_1":null,"customfield_2":[],"customfield_3":{"options":[false,9007199254740993]},"customfield_4":"text"}`
+	var fields IssueFields
+	if err := json.Unmarshal([]byte(raw), &fields); err != nil {
+		t.Fatal(err)
+	}
+	if fields.Summary != "Issue" {
+		t.Fatalf("summary = %q", fields.Summary)
+	}
+	// JSON must still reflect changes made through the typed fields.
+	fields.Summary = "Edited"
+	data, err := json.Marshal(fields)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got, want map[string]json.RawMessage
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal([]byte(raw), &want); err != nil {
+		t.Fatal(err)
+	}
+	want["summary"] = json.RawMessage(`"Edited"`)
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("encoded fields = %s", data)
 	}
 }
