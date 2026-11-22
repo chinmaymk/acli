@@ -70,17 +70,18 @@ const args = await resolveArgs().catch((err: Error) => {
 
 // Build the command tree for the `commands` subcommand
 function getCommandTree(): CommandInfo {
+  const parentFlag = { name: 'parent', type: 'string', usage: 'Parent issue key (for example, PROJ-123)' };
   return buildCommandTreeFromList([
     { command: 'jira', describe: 'Manage Jira issues, projects, boards, and sprints', parent: 'acli', aliases: ['j'] },
-    { command: 'jira issue', describe: 'Manage Jira issues', parent: 'acli', aliases: ['i'] },
-    { command: 'jira issue list', describe: 'List issues', parent: 'acli jira' },
-    { command: 'jira issue get <issue-key>', describe: 'Get issue details', parent: 'acli jira' },
-    { command: 'jira issue create', describe: 'Create a new issue', parent: 'acli jira' },
-    { command: 'jira issue update <issue-key>', describe: 'Update an existing issue', parent: 'acli jira' },
-    { command: 'jira issue comment <issue-key>', describe: 'Add a comment to an issue', parent: 'acli jira' },
-    { command: 'jira issue transition <issue-key> <transition>', describe: 'Transition an issue to a new status', parent: 'acli jira' },
-    { command: 'jira issue assign <issue-key> [assignee]', describe: 'Assign an issue to a user', parent: 'acli jira' },
-    { command: 'jira issue delete <issue-key>', describe: 'Delete an issue', parent: 'acli jira' },
+    { command: 'issue', describe: 'Manage Jira issues', parent: 'acli jira', aliases: ['i'] },
+    { command: 'list', describe: 'List issues', parent: 'acli jira issue' },
+    { command: 'get <issue-key>', describe: 'Get issue details', parent: 'acli jira issue' },
+    { command: 'create', describe: 'Create a new issue', parent: 'acli jira issue', flags: [parentFlag] },
+    { command: 'edit <issue-key>', describe: 'Edit an existing issue', parent: 'acli jira issue', flags: [parentFlag] },
+    { command: 'comment', describe: 'Manage issue comments', parent: 'acli jira issue' },
+    { command: 'transition <issue-key>', describe: 'Transition an issue to a new status', parent: 'acli jira issue' },
+    { command: 'assign <issue-key> <account-id>', describe: 'Assign an issue to a user', parent: 'acli jira issue' },
+    { command: 'delete <issue-key>', describe: 'Delete an issue', parent: 'acli jira issue' },
     { command: 'jira project', describe: 'Manage Jira projects', parent: 'acli jira', aliases: ['p'] },
     { command: 'jira project list', describe: 'List projects', parent: 'acli jira' },
     { command: 'jira board', describe: 'Manage Jira boards', parent: 'acli jira', aliases: ['b'] },

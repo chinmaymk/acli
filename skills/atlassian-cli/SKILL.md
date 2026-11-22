@@ -65,9 +65,9 @@ Manage issues, projects, boards, sprints, and more.
 acli jira issue list --jql "project = PROJ AND status = Open"
 acli jira issue get PROJ-123
 acli jira issue create --project PROJ --type Task --summary "Fix the bug"
-acli jira issue update PROJ-123 --summary "Updated summary"
+acli jira issue edit PROJ-123 --summary "Updated summary"
 acli jira issue create --project PROJ --summary "Bug" --fix-versions 1.2.0 --affects-versions 1.1.0
-acli jira issue update PROJ-123 --field customfield_10010=5 --field 'components=[{"name":"API"}]'  # any field; see `issue editmeta`
+acli jira issue edit PROJ-123 --field customfield_10010=5 --field 'components=[{"name":"API"}]'  # any field; see `issue editmeta`
 acli jira issue create --project PROJ --summary "Bug" --fields-json @fields.json
 acli jira issue delete PROJ-123
 acli jira issue assign PROJ-123 --assignee <account-id>
@@ -75,6 +75,20 @@ acli jira issue transition PROJ-123 --transition "In Progress"
 acli jira issue add-label PROJ-123 --label backend
 acli jira issue link PROJ-123 PROJ-456 --type Blocks
 ```
+
+#### Create a parent and its children
+
+Create the parent once and read its key from the JSON response. For children of a Task or Story, use the project's configured subtask type. For children of an Epic, use a standard issue type such as Task.
+
+```bash
+parent=$(acli jira issue create --project PROJ --type Task --summary "Publish release notes" -o json | jq -er '.key') || exit 1
+for summary in "Draft notes" "Review notes"; do
+  acli jira issue create --project PROJ --type "Sub-task" --summary "$summary" --parent "$parent" || exit 1
+done
+acli jira search --jql "parent = $parent" -o json
+```
+
+To move an existing child to a compatible parent, use `acli jira issue edit PROJ-123 --parent PROJ-456`.
 
 ### Search (`jira search` / `j s`)
 
