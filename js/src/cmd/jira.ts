@@ -53,6 +53,7 @@ interface JiraArgv {
   //     the required-field overlap check. ---
   jql: string;
   assignee: string;
+  parent?: string;
   status: string;
   summary: string;
   description: string;
@@ -163,6 +164,18 @@ interface JiraArgv {
   // local variant that accepts string[].
   project: string;
 }
+
+const parentOption = {
+  type: 'string',
+  description: 'Parent issue key (for example, PROJ-123)',
+  requiresArg: true,
+  coerce(value: string) {
+    if (typeof value !== 'string') throw new Error('--parent requires a single issue key');
+    const key = value.trim();
+    if (!key) throw new Error('--parent requires an issue key');
+    return key;
+  },
+} as const;
 
 // Variant for `issue createmeta` where --project is declared as an array.
 interface JiraCreateMetaArgv extends Omit<JiraArgv, 'project'> {
@@ -351,6 +364,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
               y2
                 .option('project', { type: 'string', description: 'Project key (uses profile default if not set)' })
                 .option('type', { type: 'string', description: 'Issue type', default: 'Task' })
+                .option('parent', parentOption)
                 .option('summary', { type: 'string', description: 'Issue summary (required)' })
                 .option('description', { type: 'string', description: 'Issue description', default: '' })
                 .option('assignee', { type: 'string', description: 'Assignee account ID', default: '' })
@@ -370,6 +384,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
                 summary: argv.summary,
               };
 
+              if (argv.parent !== undefined) fields.parent = { key: argv.parent };
               if (argv.description) fields.description = adfDoc(argv.description);
               if (argv.assignee) fields.assignee = { accountId: argv.assignee };
               if (argv.priority) fields.priority = { name: argv.priority };
@@ -390,6 +405,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
             (y2) =>
               y2
                 .positional('issue-key', { type: 'string' })
+                .option('parent', parentOption)
                 .option('summary', { type: 'string', description: 'Issue summary' })
                 .option('description', { type: 'string', description: 'Issue description' })
                 .option('assignee', { type: 'string', description: 'Assignee account ID' })
@@ -402,6 +418,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
               const fields: Record<string, JsonBody> = {};
 
               if (argv.summary !== undefined) fields.summary = argv.summary;
+              if (argv.parent !== undefined) fields.parent = { key: argv.parent };
               if (argv.description !== undefined) fields.description = adfDoc(argv.description);
               if (argv.assignee !== undefined) fields.assignee = { accountId: argv.assignee };
               if (argv.priority !== undefined) fields.priority = { name: argv.priority };

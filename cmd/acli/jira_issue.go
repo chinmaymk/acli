@@ -239,6 +239,19 @@ func mergeExtraFields(fields, extra map[string]interface{}) {
 	}
 }
 
+func setParentField(cmd *cobra.Command, fields map[string]interface{}) error {
+	if !cmd.Flags().Changed("parent") {
+		return nil
+	}
+	key, _ := cmd.Flags().GetString("parent")
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return fmt.Errorf("--parent requires an issue key")
+	}
+	fields["parent"] = map[string]interface{}{"key": key}
+	return nil
+}
+
 // --- issue create ---
 
 var jiraIssueCreateCmd = &cobra.Command{
@@ -317,6 +330,10 @@ var jiraIssueCreateCmd = &cobra.Command{
 
 		if len(affectsVersions) > 0 {
 			fields["versions"] = namedRefs(affectsVersions)
+		}
+
+		if err := setParentField(cmd, fields); err != nil {
+			return err
 		}
 
 		extra, err := extraFields(cmd)
@@ -401,6 +418,10 @@ var jiraIssueEditCmd = &cobra.Command{
 		if cmd.Flags().Changed("affects-versions") {
 			v, _ := cmd.Flags().GetStringSlice("affects-versions")
 			fields["versions"] = namedRefs(v)
+		}
+
+		if err := setParentField(cmd, fields); err != nil {
+			return err
 		}
 
 		extra, err := extraFields(cmd)
@@ -1336,6 +1357,7 @@ func init() {
 	// issue create flags
 	jiraIssueCreateCmd.Flags().String("project", "", "Project key (uses profile default if not set)")
 	jiraIssueCreateCmd.Flags().String("type", "Task", "Issue type")
+	jiraIssueCreateCmd.Flags().String("parent", "", "Parent issue key (for example, PROJ-123)")
 	jiraIssueCreateCmd.Flags().String("summary", "", "Issue summary (required)")
 	jiraIssueCreateCmd.Flags().String("description", "", "Issue description")
 	jiraIssueCreateCmd.Flags().String("assignee", "", "Assignee account ID")
@@ -1349,6 +1371,7 @@ func init() {
 	_ = jiraIssueCreateCmd.MarkFlagRequired("summary")
 
 	// issue edit flags
+	jiraIssueEditCmd.Flags().String("parent", "", "Parent issue key (for example, PROJ-123)")
 	jiraIssueEditCmd.Flags().String("summary", "", "Issue summary")
 	jiraIssueEditCmd.Flags().String("description", "", "Issue description")
 	jiraIssueEditCmd.Flags().String("assignee", "", "Assignee account ID")

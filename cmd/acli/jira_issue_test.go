@@ -67,3 +67,46 @@ func TestExtraFieldsInvalid(t *testing.T) {
 		}
 	}
 }
+
+func TestIssueParentField(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		args    []string
+		wantKey string
+		wantErr bool
+	}{
+		{name: "omitted"},
+		{name: "generic field", args: []string{"--field", `parent={"key":"TEST-1"}`}, wantKey: "TEST-1"},
+		{name: "dedicated flag wins", args: []string{"--parent", "TEST-2", "--field", `parent={"key":"TEST-1"}`}, wantKey: "TEST-2"},
+		{name: "blank", args: []string{"--parent", " "}, wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cmd := &cobra.Command{}
+			cmd.Flags().String("parent", "", "")
+			cmd.Flags().StringArray("field", nil, "")
+			if err := cmd.ParseFlags(tc.args); err != nil {
+				t.Fatal(err)
+			}
+			fields := map[string]interface{}{}
+			err := setParentField(cmd, fields)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("setParentField error = %v, wantErr %v", err, tc.wantErr)
+			}
+			if tc.wantErr {
+				return
+			}
+			extra, err := extraFields(cmd)
+			if err != nil {
+				t.Fatal(err)
+			}
+			mergeExtraFields(fields, extra)
+			want := map[string]interface{}{}
+			if tc.wantKey != "" {
+				want["parent"] = map[string]interface{}{"key": tc.wantKey}
+			}
+			if !reflect.DeepEqual(fields, want) {
+				t.Errorf("fields = %#v, want %#v", fields, want)
+			}
+		})
+	}
+}
