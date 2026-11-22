@@ -79,10 +79,15 @@ acli jira issue link PROJ-123 PROJ-456 --type Blocks
 ### Search (`jira search` / `j s`)
 
 ```bash
+acli jira search "release notes" --project PROJ --mine --updated-since 30d -o json
+acli jira search PROJ-123
+acli jira search --assignee "$account_id" --updated-since 2w
 acli jira search --jql "assignee = currentUser() ORDER BY updated DESC" --max-results 25
 ```
 
-Supports `--jql`, `--max-results`, `--start-at`, `--fields`, and `--json`.
+Use a few remembered words. ACLI searches Jira for all the words, treating punctuation as separators. An issue key performs an exact key search. Filters also work on their own. Use `--jql` for operators, exact phrases, and custom ordering.
+
+Word and filter searches return compact previews with the key, summary, status, and browser URL. Title matches appear first within the retrieved results. A short excerpt appears when a search word occurs in the description. Pass `--fields` with `-o json` to request Jira issue fields instead of previews.
 
 ### Projects (`jira project` / `j p`)
 

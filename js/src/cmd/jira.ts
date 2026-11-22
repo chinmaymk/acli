@@ -8,6 +8,7 @@ import {
   printIssueRow,
   printPaginationHint,
 } from './helpers.js';
+import { issuePreviews, textSearchJQL } from './jira-text-search.js';
 import * as jiraIssues from '../internal/jira/issues.js';
 import * as jiraProjects from '../internal/jira/projects.js';
 import * as jiraAgile from '../internal/jira/agile.js';
@@ -1668,29 +1669,51 @@ export function registerJiraCommands(yargs: Argv): Argv {
     // search (alias: s)
     // =========================================================================
     .command(
-      ['search', 's'],
-      'Search issues using JQL',
+      ['search [text]', 's [text]'],
+      'Find issues by words, issue key, filters, or JQL',
       (y) =>
         y
-          .option('jql', { type: 'string', description: 'JQL query (required)' })
+          .positional('text', { type: 'string', description: 'Words or an issue key' })
+          .option('jql', { type: 'string', requiresArg: true, description: 'Advanced JQL query' })
+          .option('project', { type: 'string', requiresArg: true, description: 'Limit to a Jira project key' })
+          .option('assignee', { type: 'string', requiresArg: true, description: 'Limit to an assignee account ID' })
+          .option('mine', { type: 'boolean', description: 'Limit to issues assigned to the current user' })
+          .option('updated-since', { type: 'string', requiresArg: true, description: 'Updated within e.g. 30d or 2w' })
+          .conflicts('jql', ['project', 'assignee', 'mine', 'updated-since'])
           .option('max-results', { type: 'number', default: 50 })
           .option('start-at', { type: 'number', default: 0 })
           .option('fields', { type: 'array', description: 'Fields to return', default: [] })
-          .option('all', { type: 'boolean', default: false })
-          .demandOption(['jql']),
+          .option('all', { type: 'boolean', default: false }),
       async (_a) => {
-              const argv = _a as Partial<JiraArgv> as JiraArgv;
+        const argv = _a as Partial<JiraArgv> as JiraArgv & { text?: string; updatedSince?: string };
+        const text = argv.text?.trim() ?? '';
+        if (argv.text !== undefined && !text) throw new Error('search text cannot be empty');
+        const plain = argv.jql === undefined;
+        if (!plain && (text || !argv.jql.trim())) {
+          throw new Error('--jql requires a nonempty query and cannot be combined with search text');
+        }
+        const jql = plain ? textSearchJQL(text, argv) : argv.jql;
+        const preview = plain && !argv.fields?.length;
+        const fields = preview ? ['summary', 'status', 'description'] : argv.fields || [];
         const client = getJiraClient(argv);
-        let results = await jiraProjects.searchJQL(client, argv.jql, argv.startAt, argv.maxResults, argv.fields || [], undefined);
+        let results = await jiraProjects.searchJQL(client, jql, argv.startAt, argv.maxResults, fields, undefined);
 
         if (argv.all) {
           while ((results.issues || []).length < results.total) {
-            const next = await jiraProjects.searchJQL(client, argv.jql, argv.startAt + results.issues.length, argv.maxResults, argv.fields || [], undefined);
+            const next = await jiraProjects.searchJQL(client, jql, argv.startAt + results.issues.length, argv.maxResults, fields, undefined);
             if (!next.issues || next.issues.length === 0) break;
             results.issues = results.issues.concat(next.issues);
           }
         }
 
+        if (preview) {
+          const items = issuePreviews(results.issues || [], text, client.baseURL);
+          if (isJSONOutput(argv)) { outputJSON({ ...results, issues: items }); return; }
+          printTable(['KEY', 'STATUS', 'SUMMARY', 'URL', 'EXCERPT'],
+            items.map(item => [item.key, item.status, item.summary, item.url, item.excerpt || '']));
+          printPaginationHint(items.length, results.total || 0);
+          return;
+        }
         if (isJSONOutput(argv)) { outputJSON(results); return; }
 
         const rows = (results.issues || []).map((issue) => [
