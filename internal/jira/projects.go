@@ -315,7 +315,7 @@ func (c *Client) GetAccessibleProjectTypes() ([]ProjectType, error) {
 // --- Search ---
 
 // SearchJQL searches for issues using JQL via GET.
-func (c *Client) SearchJQL(jql string, startAt, maxResults int, fields []string, expand []string) (*SearchResults, error) {
+func (c *Client) SearchJQL(jql string, startAt, maxResults int, fields, expand []string, all bool) (*SearchResults, error) {
 	q := url.Values{}
 	if jql != "" {
 		q.Set("jql", jql)
@@ -332,10 +332,49 @@ func (c *Client) SearchJQL(jql string, startAt, maxResults int, fields []string,
 	if len(expand) > 0 {
 		q.Set("expand", strings.Join(expand, ","))
 	}
+	const path = "/rest/api/3/search/jql"
 	var result SearchResults
-	err := c.Get("/rest/api/3/search/jql", q, &result)
-	if err != nil {
+	if err := c.Get(path, q, &result); err != nil {
 		return nil, err
+	}
+	if !all {
+		return &result, nil
+	}
+
+	seen := make(map[string]bool)
+pages:
+	for result.IsLast == nil || !*result.IsLast {
+		token := result.NextPageToken
+		switch {
+		case token != "":
+			if seen[token] {
+				return nil, fmt.Errorf("search returned a repeated nextPageToken")
+			}
+			seen[token] = true
+			q.Del("startAt")
+			q.Set("nextPageToken", token)
+		case result.IsLast != nil:
+			return nil, fmt.Errorf("search returned isLast=false without a nextPageToken")
+		case len(seen) == 0 && startAt+len(result.Issues) < result.Total:
+			// Older responses use total and startAt instead of a cursor.
+			q.Set("startAt", strconv.Itoa(startAt+len(result.Issues)))
+		default:
+			break pages
+		}
+
+		var page SearchResults
+		if err := c.Get(path, q, &page); err != nil {
+			return nil, err
+		}
+		result.Issues = append(result.Issues, page.Issues...)
+		result.WarningMessages = append(result.WarningMessages, page.WarningMessages...)
+		result.NextPageToken, result.IsLast = page.NextPageToken, page.IsLast
+		if len(seen) == 0 && len(page.Issues) == 0 && page.IsLast == nil && page.NextPageToken == "" {
+			return nil, fmt.Errorf("search returned an empty page before reaching total")
+		}
+	}
+	if startAt == 0 && result.Total == 0 {
+		result.Total = len(result.Issues)
 	}
 	return &result, nil
 }

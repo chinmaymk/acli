@@ -30,22 +30,9 @@ var jiraSearchCmd = &cobra.Command{
 			fields = []string{"summary"}
 		}
 
-		results, err := client.SearchJQL(jql, startAt, maxResults, fields, nil)
+		results, err := client.SearchJQL(jql, startAt, maxResults, fields, nil, all)
 		if err != nil {
 			return err
-		}
-
-		if all {
-			for len(results.Issues) < results.Total {
-				next, err := client.SearchJQL(jql, startAt+len(results.Issues), maxResults, fields, nil)
-				if err != nil {
-					return err
-				}
-				if len(next.Issues) == 0 {
-					break
-				}
-				results.Issues = append(results.Issues, next.Issues...)
-			}
 		}
 
 		if isJSONOutput(cmd) {
