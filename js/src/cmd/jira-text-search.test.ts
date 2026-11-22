@@ -25,3 +25,22 @@ test('preview title matches first and include text around a description match', 
   assert.equal(previews[1].excerpt, 'Review release notes');
   assert.equal(previews[1].url, 'https://example.test/browse/DEV-1');
 });
+
+test('match any groups the word conditions and preserves exact-key lookups', () => {
+  assert.equal(textSearchJQL('draft notes', { match: 'any', project: 'DEV', mine: true, updatedSince: '2w' }),
+    String.raw`(text ~ "\"draft\"" OR text ~ "\"notes\"") AND project = "DEV" AND assignee = currentUser() AND updated >= "-2w"`);
+  assert.equal(textSearchJQL('dev-21', { match: 'any' }), 'key = "DEV-21"');
+});
+
+test('match any ranks distinct visible words, then title matches, then Jira order', () => {
+  const doc = (text: string) => ({ type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text }] }] });
+  const issues = [
+    { key: 'DEV-1', fields: { summary: 'Draft draft draft' } },
+    { key: 'DEV-2', fields: { description: doc('Draft notes') } },
+    { key: 'DEV-3', fields: { summary: 'Draft', description: doc('Notes') } },
+    { key: 'DEV-4', fields: { summary: 'Notes', description: doc('Draft') } },
+  ];
+  const previews = issuePreviews(issues, 'draft draft notes', 'https://example.test', 'any');
+  assert.deepEqual(previews.map(item => item.key), ['DEV-3', 'DEV-4', 'DEV-2', 'DEV-1']);
+  assert.ok(previews.every(item => !('matchedWords' in item)));
+});

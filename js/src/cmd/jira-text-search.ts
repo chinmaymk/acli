@@ -1,7 +1,10 @@
 import { render } from '../internal/adf/render.js';
 import type { IssueDetailed } from '../internal/jira/types.js';
 
+export type SearchMatch = 'all' | 'any';
+
 interface SearchFilters {
+  match?: SearchMatch;
   project?: string;
   assignee?: string;
   mine?: boolean;
@@ -25,10 +28,10 @@ export function textSearchJQL(text: string, filters: SearchFilters): string {
     } else {
       const words = searchWords(text);
       if (!words.length) throw new Error('search text must contain a letter or number');
-      for (const word of words) {
-        // Quote the word for both Jira's text parser and JQL.
-        clauses.push('text ~ ' + JSON.stringify(JSON.stringify(word)));
-      }
+      // Quote each word for both Jira's text parser and JQL.
+      const terms = words.map(word => 'text ~ ' + JSON.stringify(JSON.stringify(word)));
+      if (filters.match === 'any' && terms.length > 1) clauses.push('(' + terms.join(' OR ') + ')');
+      else clauses.push(...terms);
     }
   }
   if (filters.project) clauses.push('project = ' + JSON.stringify(filters.project));
@@ -45,18 +48,26 @@ export function textSearchJQL(text: string, filters: SearchFilters): string {
   return clauses.join(' AND ');
 }
 
-export function issuePreviews(issues: IssueDetailed[], text: string, baseURL: string) {
-  const terms = searchWords(text.toLowerCase());
+export function issuePreviews(issues: IssueDetailed[], text: string, baseURL: string, match: SearchMatch = 'all') {
+  const terms = [...new Set(searchWords(text.toLowerCase()))];
   const matches = (value: string) => terms.some(term => value.toLowerCase().includes(term));
   const previews = issues.map(issue => {
-    const body = render(issue.fields?.description).split(/\s+/u).filter(Boolean);
+    const description = render(issue.fields?.description);
+    const body = description.split(/\s+/u).filter(Boolean);
     const index = body.findIndex(matches);
     const excerpt = index < 0 ? undefined : Array.from(
       body.slice(Math.max(0, index - 5), index + 14).join(' ')
     ).slice(0, 160).join('');
     const key = issue.key || '';
-    return { key, summary: issue.fields?.summary || '', status: issue.fields?.status?.name || '',
+    const summary = issue.fields?.summary || '';
+    let matchedWords = 0;
+    if (match === 'any') {
+      const visible = new Set(searchWords((summary + ' ' + description).toLowerCase()));
+      matchedWords = terms.filter(term => visible.has(term)).length;
+    }
+    return { matchedWords, key, summary, status: issue.fields?.status?.name || '',
       url: baseURL + '/browse/' + encodeURIComponent(key), excerpt };
   });
-  return previews.sort((a, b) => Number(matches(b.summary)) - Number(matches(a.summary)));
+  previews.sort((a, b) => b.matchedWords - a.matchedWords || Number(matches(b.summary)) - Number(matches(a.summary)));
+  return previews.map(({ matchedWords, ...preview }) => preview);
 }

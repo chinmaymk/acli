@@ -74,6 +74,7 @@ function getCommandTree(): CommandInfo {
     { command: 'jira', describe: 'Manage Jira issues, projects, boards, and sprints', parent: 'acli', aliases: ['j'] },
     { command: 'search [text]', describe: 'Find issues by words, issue key, filters, or JQL', parent: 'acli jira', aliases: ['s'],
       flags: [
+        { name: 'match', type: 'string', default: 'all', usage: 'Match all or any search words; filters always apply' },
         { name: 'project', type: 'string', usage: 'Limit to a Jira project key' },
         { name: 'assignee', type: 'string', usage: 'Limit to an assignee account ID' },
         { name: 'mine', type: 'boolean', usage: 'Limit to issues assigned to the current user' },

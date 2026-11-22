@@ -8,7 +8,7 @@ import {
   printIssueRow,
   printPaginationHint,
 } from './helpers.js';
-import { issuePreviews, textSearchJQL } from './jira-text-search.js';
+import { issuePreviews, textSearchJQL, type SearchMatch } from './jira-text-search.js';
 import * as jiraIssues from '../internal/jira/issues.js';
 import * as jiraProjects from '../internal/jira/projects.js';
 import * as jiraAgile from '../internal/jira/agile.js';
@@ -1674,18 +1674,21 @@ export function registerJiraCommands(yargs: Argv): Argv {
       (y) =>
         y
           .positional('text', { type: 'string', description: 'Words or an issue key' })
+          .option('match', { type: 'string', choices: ['all', 'any'], requiresArg: true,
+            description: 'Match all (default) or any search words; filters always apply' })
+          .example('$0 jira search "release notes" --project DEMO --match any', 'Broaden the word search within DEMO')
           .option('jql', { type: 'string', requiresArg: true, description: 'Advanced JQL query' })
           .option('project', { type: 'string', requiresArg: true, description: 'Limit to a Jira project key' })
           .option('assignee', { type: 'string', requiresArg: true, description: 'Limit to an assignee account ID' })
           .option('mine', { type: 'boolean', description: 'Limit to issues assigned to the current user' })
           .option('updated-since', { type: 'string', requiresArg: true, description: 'Updated within e.g. 30d or 2w' })
-          .conflicts('jql', ['project', 'assignee', 'mine', 'updated-since'])
+          .conflicts('jql', ['project', 'assignee', 'mine', 'updated-since', 'match'])
           .option('max-results', { type: 'number', default: 50 })
           .option('start-at', { type: 'number', default: 0 })
           .option('fields', { type: 'array', description: 'Fields to return', default: [] })
           .option('all', { type: 'boolean', default: false }),
       async (_a) => {
-        const argv = _a as Partial<JiraArgv> as JiraArgv & { text?: string; updatedSince?: string };
+        const argv = _a as Partial<JiraArgv> as JiraArgv & { text?: string; updatedSince?: string; match?: SearchMatch };
         const text = argv.text?.trim() ?? '';
         if (argv.text !== undefined && !text) throw new Error('search text cannot be empty');
         const plain = argv.jql === undefined;
@@ -1707,7 +1710,7 @@ export function registerJiraCommands(yargs: Argv): Argv {
         }
 
         if (preview) {
-          const items = issuePreviews(results.issues || [], text, client.baseURL);
+          const items = issuePreviews(results.issues || [], text, client.baseURL, argv.match);
           if (isJSONOutput(argv)) { outputJSON({ ...results, issues: items }); return; }
           printTable(['KEY', 'STATUS', 'SUMMARY', 'URL', 'EXCERPT'],
             items.map(item => [item.key, item.status, item.summary, item.url, item.excerpt || '']));

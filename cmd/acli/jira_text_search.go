@@ -24,7 +24,7 @@ type issueSearchFilters struct {
 	mine                            bool
 }
 
-func issueSearchQuery(cmd *cobra.Command, args []string) (string, string, error) {
+func issueSearchQuery(cmd *cobra.Command, args []string, match string) (string, string, error) {
 	var text string
 	if len(args) > 0 {
 		text = strings.TrimSpace(args[0])
@@ -49,12 +49,15 @@ func issueSearchQuery(cmd *cobra.Command, args []string) (string, string, error)
 	assignee, _ := cmd.Flags().GetString("assignee")
 	age, _ := cmd.Flags().GetString("updated-since")
 	mine, _ := cmd.Flags().GetBool("mine")
-	jql, err := textSearchJQL(text, issueSearchFilters{project: project, assignee: assignee, mine: mine, updatedSince: age})
+	if match != "any" && match != "all" {
+		return "", "", fmt.Errorf("--match must be all or any")
+	}
+	jql, err := textSearchJQL(text, match, issueSearchFilters{project: project, assignee: assignee, mine: mine, updatedSince: age})
 	return jql, text, err
 }
 
 // Build JQL from literal words. Only --jql accepts query syntax.
-func textSearchJQL(text string, f issueSearchFilters) (string, error) {
+func textSearchJQL(text, match string, f issueSearchFilters) (string, error) {
 	var clauses []string
 	if text != "" {
 		if searchKey.MatchString(text) {
@@ -64,9 +67,15 @@ func textSearchJQL(text string, f issueSearchFilters) (string, error) {
 			if len(words) == 0 {
 				return "", fmt.Errorf("search text must contain a letter or number")
 			}
+			terms := make([]string, 0, len(words))
 			for _, word := range words {
 				// Quote the word for both Jira's text parser and JQL.
-				clauses = append(clauses, "text ~ "+strconv.Quote(strconv.Quote(word)))
+				terms = append(terms, "text ~ "+strconv.Quote(strconv.Quote(word)))
+			}
+			if match == "any" && len(terms) > 1 {
+				clauses = append(clauses, "("+strings.Join(terms, " OR ")+")")
+			} else {
+				clauses = append(clauses, terms...)
 			}
 		}
 	}
@@ -95,18 +104,20 @@ func textSearchJQL(text string, f issueSearchFilters) (string, error) {
 }
 
 type issuePreview struct {
-	Key     string `json:"key"`
-	Summary string `json:"summary"`
-	Status  string `json:"status"`
-	URL     string `json:"url"`
-	Excerpt string `json:"excerpt,omitempty"`
+	matchedWords int    // Used only for sorting match-any previews.
+	Key          string `json:"key"`
+	Summary      string `json:"summary"`
+	Status       string `json:"status"`
+	URL          string `json:"url"`
+	Excerpt      string `json:"excerpt,omitempty"`
 }
 
-func issuePreviews(issues []jira.IssueDetailed, text, baseURL string) []issuePreview {
+func issuePreviews(issues []jira.IssueDetailed, text, baseURL, match string) []issuePreview {
 	previews := make([]issuePreview, 0, len(issues))
 	words := searchWord.FindAllString(strings.ToLower(text), -1)
 	for _, issue := range issues {
-		body := strings.Fields(adf.Render(issue.Fields.Description))
+		description := adf.Render(issue.Fields.Description)
+		body := strings.Fields(description)
 		var excerpt string
 		for i, word := range body {
 			if containsSearchWord(word, words) {
@@ -116,16 +127,37 @@ func issuePreviews(issues []jira.IssueDetailed, text, baseURL string) []issuePre
 				break
 			}
 		}
+		var matchedWords int
+		if match == "any" {
+			matchedWords = countSearchWords(issue.Fields.Summary+" "+description, words)
+		}
 		previews = append(previews, issuePreview{
-			Key: issue.Key, Summary: issue.Fields.Summary, Status: renderIssueField("status", issue),
+			matchedWords: matchedWords,
+			Key:          issue.Key, Summary: issue.Fields.Summary, Status: renderIssueField("status", issue),
 			URL: baseURL + "/browse/" + url.PathEscape(issue.Key), Excerpt: excerpt,
 		})
 	}
 	// Promote title matches within the retrieved page, keeping Jira's order for ties.
 	sort.SliceStable(previews, func(i, j int) bool {
+		if previews[i].matchedWords != previews[j].matchedWords {
+			return previews[i].matchedWords > previews[j].matchedWords
+		}
 		return containsSearchWord(previews[i].Summary, words) && !containsSearchWord(previews[j].Summary, words)
 	})
 	return previews
+}
+
+// Count distinct query words visible in the summary and rendered description.
+func countSearchWords(value string, words []string) int {
+	remaining := make(map[string]struct{}, len(words))
+	for _, word := range words {
+		remaining[word] = struct{}{}
+	}
+	total := len(remaining)
+	for _, word := range searchWord.FindAllString(strings.ToLower(value), -1) {
+		delete(remaining, word)
+	}
+	return total - len(remaining)
 }
 
 func containsSearchWord(value string, words []string) bool {

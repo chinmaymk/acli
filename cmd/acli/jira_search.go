@@ -16,9 +16,11 @@ var jiraSearchCmd = &cobra.Command{
 	Aliases: []string{"s"},
 	Short:   "Find issues by words, issue key, filters, or JQL",
 	Example: `  acli jira search "release notes" --project DEMO --mine --updated-since 30d
+  acli jira search "release notes" --project DEMO --match any
   acli jira search --jql 'status = Open'`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		jql, text, err := issueSearchQuery(cmd, args)
+		match, _ := cmd.Flags().GetString("match")
+		jql, text, err := issueSearchQuery(cmd, args, match)
 		if err != nil {
 			return err
 		}
@@ -58,7 +60,7 @@ var jiraSearchCmd = &cobra.Command{
 		}
 
 		if preview {
-			items := issuePreviews(results.Issues, text, client.BaseURL)
+			items := issuePreviews(results.Issues, text, client.BaseURL, match)
 			if isJSONOutput(cmd) {
 				return outputJSON(struct {
 					*jira.SearchResults
@@ -294,12 +296,13 @@ var jiraFilterDeleteCmd = &cobra.Command{
 
 func init() {
 	// Search
+	jiraSearchCmd.Flags().String("match", "all", "Match all or any search words; filters always apply")
 	jiraSearchCmd.Flags().String("jql", "", "Advanced JQL query")
 	jiraSearchCmd.Flags().String("project", "", "Limit to a Jira project key")
 	jiraSearchCmd.Flags().String("assignee", "", "Limit to an assignee account ID")
 	jiraSearchCmd.Flags().Bool("mine", false, "Limit to issues assigned to the current user")
 	jiraSearchCmd.Flags().String("updated-since", "", "Limit to issues updated within a duration such as 30d or 2w")
-	for _, flag := range []string{"project", "assignee", "mine", "updated-since"} {
+	for _, flag := range []string{"project", "assignee", "mine", "updated-since", "match"} {
 		jiraSearchCmd.MarkFlagsMutuallyExclusive("jql", flag)
 	}
 	jiraSearchCmd.Flags().Int("max-results", 50, "Maximum number of results per page")
