@@ -3,6 +3,7 @@ package jira
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 // Pagination is the common pagination fields in Jira responses.
@@ -163,8 +164,9 @@ type Project struct {
 	AvatarURLs      AvatarURLs         `json:"avatarUrls,omitempty"`
 }
 
-// IssueFields contains the standard fields of a Jira issue.
+// IssueFields contains the standard fields and retains Jira custom fields for JSON output.
 type IssueFields struct {
+	customFields map[string]json.RawMessage
 	Summary      string             `json:"summary,omitempty"`
 	Description  interface{}        `json:"description,omitempty"`
 	IssueType    *IssueType         `json:"issuetype,omitempty"`
@@ -191,6 +193,44 @@ type IssueFields struct {
 	Votes        *Votes             `json:"votes,omitempty"`
 	TimeTracking *TimeTracking      `json:"timetracking,omitempty"`
 	IssueLinks   []IssueLink        `json:"issuelinks,omitempty"`
+}
+
+// issueFieldsJSON has the same fields without the JSON methods below.
+type issueFieldsJSON IssueFields
+
+func (f *IssueFields) UnmarshalJSON(data []byte) error {
+	if err := json.Unmarshal(data, (*issueFieldsJSON)(f)); err != nil {
+		return err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	for name := range fields {
+		if !strings.HasPrefix(name, "customfield_") {
+			delete(fields, name)
+		}
+	}
+	if len(fields) == 0 {
+		fields = nil
+	}
+	f.customFields = fields
+	return nil
+}
+
+func (f IssueFields) MarshalJSON() ([]byte, error) {
+	standard, err := json.Marshal(issueFieldsJSON(f))
+	if err != nil || len(f.customFields) == 0 {
+		return standard, err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(standard, &fields); err != nil {
+		return nil, err
+	}
+	for name, value := range f.customFields {
+		fields[name] = value
+	}
+	return json.Marshal(fields)
 }
 
 // Issue represents a Jira issue.
